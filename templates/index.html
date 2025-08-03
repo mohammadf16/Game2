@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Number Hunt - The Ultimate Social Deduction Game</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <!-- Main Menu Screen -->
+    <div id="menuScreen" class="screen">
+        <div class="container">
+            <div class="header">
+                <h1>NUMBER HUNT</h1>
+                <p class="subtitle">The Ultimate Social Deduction Game</p>
+            </div>
+            
+            <div class="card text-center">
+                <h2 class="mb-2">Welcome to Number Hunt!</h2>
+                <p class="mb-3">Can you spot the player who doesn't know what everyone else is talking about?</p>
+                
+                <div class="flex flex-center gap-2">
+                    <button id="createRoomBtn" class="btn btn-primary">Create Room</button>
+                    <button id="joinRoomBtn" class="btn btn-secondary">Join Room</button>
+                </div>
+            </div>
+            
+            <div class="card">
+                <h3 class="card-title">How to Play</h3>
+                <div class="game-rules">
+                    <div class="rule-item">
+                        <strong>1. Join a Room:</strong> Create or join a game room with 3-12 players
+                    </div>
+                    <div class="rule-item">
+                        <strong>2. Answer Questions:</strong> Most players get the same question, but one gets a different one
+                    </div>
+                    <div class="rule-item">
+                        <strong>3. Discuss:</strong> Talk about the answers and try to find the imposter
+                    </div>
+                    <div class="rule-item">
+                        <strong>4. Vote:</strong> Vote for who you think is the imposter
+                    </div>
+                    <div class="rule-item">
+                        <strong>5. Win:</strong> Detectives win by catching the imposter, imposter wins by staying hidden
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create Room Screen -->
+    <div id="createRoomScreen" class="screen hidden">
+        <div class="container">
+            <div class="header">
+                <h1>Create Room</h1>
+                <button class="btn btn-secondary back-btn">← Back to Menu</button>
+            </div>
+            
+            <div class="card">
+                <form id="createRoomForm">
+                    <div class="form-group">
+                        <label class="form-label" for="username">Your Username</label>
+                        <input type="text" id="username" name="username" class="form-input" placeholder="Enter your username" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label" for="roomName">Room Name</label>
+                        <input type="text" id="roomName" name="roomName" class="form-input" placeholder="Enter room name" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label" for="maxPlayers">Max Players</label>
+                        <select id="maxPlayers" name="maxPlayers" class="form-input" required>
+                            <option value="4">4 Players</option>
+                            <option value="5">5 Players</option>
+                            <option value="6" selected>6 Players</option>
+                            <option value="7">7 Players</option>
+                            <option value="8">8 Players</option>
+                            <option value="10">10 Players</option>
+                            <option value="12">12 Players</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label" for="totalRounds">Number of Rounds</label>
+                        <select id="totalRounds" name="totalRounds" class="form-input" required>
+                            <option value="3">3 Rounds</option>
+                            <option value="5" selected>5 Rounds</option>
+                            <option value="7">7 Rounds</option>
+                            <option value="10">10 Rounds</option>
+                        </select>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary">Create Room</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Join Room Screen -->
+    <div id="joinRoomScreen" class="screen hidden">
+        <div class="container">
+            <div class="header">
+                <h1>Join Room</h1>
+                <button class="btn btn-secondary back-btn">← Back to Menu</button>
+            </div>
+            
+            <div class="card">
+                <h3 class="card-title">Available Rooms</h3>
+                <div id="availableRooms" class="mb-3">
+                    <div class="loading">
+                        <div class="spinner"></div>
+                    </div>
+                </div>
+                
+                <form id="joinRoomForm">
+                    <input type="hidden" id="selectedRoomId" name="roomId" required>
+                    
+                    <div class="form-group">
+                        <label class="form-label" for="joinUsername">Your Username</label>
+                        <input type="text" id="joinUsername" name="username" class="form-input" placeholder="Enter your username" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label" for="nickname">Your Nickname</label>
+                        <input type="text" id="nickname" name="nickname" class="form-input" placeholder="Enter your display name" required>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary">Join Selected Room</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Lobby Screen -->
+    <div id="lobbyScreen" class="screen hidden">
+        <div class="container">
+            <div class="header">
+                <h1 id="lobbyRoomName">Game Lobby</h1>
+                <div class="room-info">
+                    <span>Players: <span id="lobbyPlayerCount">0/0</span></span>
+                </div>
+            </div>
+            
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">Players in Room</h3>
+                    <button id="startGameBtn" class="btn btn-success hidden">Start Game</button>
+                </div>
+                
+                <div id="lobbyPlayers" class="players-grid">
+                    <!-- Players will be populated here -->
+                </div>
+                
+                <div class="text-center">
+                    <p class="mb-2">Waiting for more players...</p>
+                    <p><small>Need at least 3 players to start the game</small></p>
+                </div>
+            </div>
+            
+            <div class="text-center">
+                <button class="btn btn-secondary back-btn">Leave Room</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Game Screen -->
+    <div id="gameScreen" class="screen hidden">
+        <div class="container">
+            <div class="header">
+                <h1>Round <span id="currentRoundNumber">1</span> of <span id="totalRounds">5</span></h1>
+                <div id="roleIndicator" class="role-indicator"></div>
+            </div>
+            
+            <div class="game-phase">
+                <h2 id="phaseTitle" class="phase-title">Loading...</h2>
+                <p id="phaseDescription" class="phase-description">Please wait...</p>
+            </div>
+            
+            <!-- Question Display -->
+            <div class="question-card">
+                <div id="questionCategory" class="question-category">Category</div>
+                <div id="questionText" class="question-text">Loading question...</div>
+            </div>
+            
+            <!-- Answer Section -->
+            <div id="answerSection" class="card hidden">
+                <h3 class="card-title">Submit Your Answer</h3>
+                <form id="answerForm">
+                    <div class="form-group">
+                        <label class="form-label" for="answerInput">Your numerical answer:</label>
+                        <input type="number" id="answerInput" name="answer" class="form-input" placeholder="Enter a number" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Submit Answer</button>
+                </form>
+            </div>
+            
+            <!-- Discussion Section -->
+            <div id="discussionSection" class="card hidden">
+                <h3 class="card-title">Discussion Phase</h3>
+                <div id="answersDisplay">
+                    <!-- Answers will be displayed here -->
+                </div>
+                <div class="text-center">
+                    <p class="mb-2">Discuss the answers with other players!</p>
+                    <p><small>Try to identify which answer doesn't fit the question</small></p>
+                    <button id="startVotingBtn" class="btn btn-warning">Start Voting</button>
+                </div>
+            </div>
+            
+            <!-- Voting Section -->
+            <div id="votingSection" class="card hidden">
+                <h3 class="card-title">Vote for the Imposter</h3>
+                <p class="text-center mb-2">Who do you think is the imposter?</p>
+                
+                <div id="votingOptions" class="voting-grid">
+                    <!-- Voting options will be populated here -->
+                </div>
+                
+                <div class="text-center">
+                    <button id="submitVoteBtn" class="btn btn-error">Submit Vote</button>
+                </div>
+            </div>
+            
+            <!-- Results Section -->
+            <div id="resultsSection" class="card hidden">
+                <h3 class="card-title">Round Results</h3>
+                <div id="roundResultsContent">
+                    <!-- Results will be populated here -->
+                </div>
+                <div class="text-center mt-3">
+                    <button id="continueBtn" class="btn btn-primary">Continue to Next Round</button>
+                </div>
+            </div>
+            
+            <!-- Players Status -->
+            <div class="card">
+                <h3 class="card-title">Players</h3>
+                <div id="gamePlayers" class="players-grid">
+                    <!-- Players will be populated here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Results Screen -->
+    <div id="resultsScreen" class="screen hidden">
+        <div class="container">
+            <div class="header">
+                <h1>Game Results</h1>
+            </div>
+            
+            <div class="card results-card">
+                <h2 class="text-center mb-2">🎉 Game Complete!</h2>
+                <div id="finalResults">
+                    <!-- Final results will be displayed here -->
+                </div>
+                <div class="text-center">
+                    <button class="btn btn-primary back-btn">Play Again</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
