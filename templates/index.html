@@ -7,31 +7,184 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-    {% load static %}
-    <link rel="stylesheet" href="{% static 'css/style.css' %}">
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/auth.css">
 </head>
 <body>
-    <!-- Main Menu Screen -->
-    <div id="menuScreen" class="screen">
+    <!-- Navigation Bar -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <h1>🎯 NUMBER HUNT</h1>
+            </div>
+            <div class="nav-content">
+                <div id="userInfo" class="user-info hidden"></div>
+                <div id="authButtons" class="auth-buttons">
+                    <button class="btn btn-secondary" onclick="game.switchTab('login')">Login</button>
+                    <button class="btn btn-primary" onclick="game.switchTab('register')">Register</button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Authentication Screen -->
+    <div id="authScreen" class="screen">
+        <div class="container">
+            <div class="auth-container">
+                <div class="auth-header">
+                    <h1>Welcome to Number Hunt</h1>
+                    <p>The ultimate social deduction game</p>
+                </div>
+                
+                <div class="auth-tabs">
+                    <button class="tab-btn active" data-tab="login">Login</button>
+                    <button class="tab-btn" data-tab="register">Sign Up</button>
+                </div>
+                
+                <!-- Login Tab -->
+                <div id="loginTab" class="tab-content">
+                    <form id="loginForm" class="auth-form">
+                        <div class="form-group">
+                            <label class="form-label" for="loginUsernameEmail">Username or Email</label>
+                            <input type="text" id="loginUsernameEmail" name="username_or_email" class="form-input" required>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label class="form-label" for="loginPassword">Password</label>
+                            <input type="password" id="loginPassword" name="password" class="form-input" required>
+                        </div>
+                        
+                        <button type="submit" class="btn btn-primary btn-full">Login</button>
+                    </form>
+                </div>
+                
+                <!-- Register Tab -->
+                <div id="registerTab" class="tab-content hidden">
+                    <form id="registerForm" class="auth-form">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label" for="firstName">First Name</label>
+                                <input type="text" id="firstName" name="first_name" class="form-input" required>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" for="lastName">Last Name</label>
+                                <input type="text" id="lastName" name="last_name" class="form-input" required>
+                            </div>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label class="form-label" for="username">Username</label>
+                            <input type="text" id="username" name="username" class="form-input" required>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label class="form-label" for="email">Email</label>
+                            <input type="email" id="email" name="email" class="form-input" required>
+                        </div>
+                        
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label" for="password">Password</label>
+                                <input type="password" id="password" name="password" class="form-input" required>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" for="passwordConfirm">Confirm Password</label>
+                                <input type="password" id="passwordConfirm" name="password_confirm" class="form-input" required>
+                            </div>
+                        </div>
+                        
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label" for="avatar">Choose Avatar</label>
+                                <select id="avatar" name="avatar" class="form-input">
+                                    <option value="detective_1">🕵️ Detective Classic</option>
+                                    <option value="detective_2">👨‍💼 Business Detective</option>
+                                    <option value="detective_3">👩‍💼 Lady Detective</option>
+                                    <option value="spy_1">🕴️ Secret Agent</option>
+                                    <option value="ninja_1">🥷 Ninja</option>
+                                    <option value="robot_1">🤖 Android</option>
+                                    <option value="alien_1">👽 Alien</option>
+                                    <option value="ghost_1">👻 Ghost</option>
+                                    <option value="wizard_1">🧙‍♂️ Wizard</option>
+                                    <option value="witch_1">🧙‍♀️ Witch</option>
+                                    <option value="pirate_1">🏴‍☠️ Pirate</option>
+                                    <option value="superhero_1">🦸‍♂️ Hero</option>
+                                    <option value="superhero_2">🦸‍♀️ Heroine</option>
+                                    <option value="vampire_1">🧛‍♂️ Vampire</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" for="gender">Gender (Optional)</label>
+                                <select id="gender" name="gender" class="form-input">
+                                    <option value="prefer_not_say">Prefer not to say</option>
+                                    <option value="male">Male</option>
+                                    <option value="female">Female</option>
+                                    <option value="non_binary">Non-binary</option>
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <button type="submit" class="btn btn-primary btn-full">Create Account</button>
+                    </form>
+                </div>
+                
+                <div class="auth-footer">
+                    <p>Join thousands of players in the ultimate game of deduction!</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Enhanced Main Menu Screen -->
+    <div id="menuScreen" class="screen hidden">
         <div class="container">
             <div class="header">
                 <h1>NUMBER HUNT</h1>
                 <p class="subtitle">The Ultimate Social Deduction Game</p>
             </div>
             
-            <div class="card text-center">
-                <h2 class="mb-2">Welcome to Number Hunt!</h2>
-                <p class="mb-3">Can you spot the player who doesn't know what everyone else is talking about?</p>
+            <!-- User Stats Overview -->
+            <div id="userStatsContainer" class="card stats-overview">
+                <!-- Stats will be populated by JavaScript -->
+            </div>
+            
+            <div class="main-menu-grid">
+                <div class="menu-section">
+                    <h2>🎮 Play</h2>
+                    <div class="menu-buttons">
+                        <button id="createRoomBtn" class="btn btn-primary btn-large">
+                            <span class="btn-icon">➕</span>
+                            Create Room
+                        </button>
+                        <button id="joinRoomBtn" class="btn btn-secondary btn-large">
+                            <span class="btn-icon">🚪</span>
+                            Join Public Room
+                        </button>
+                        <button id="joinByCodeBtn" class="btn btn-secondary btn-large">
+                            <span class="btn-icon">🔗</span>
+                            Join by Code
+                        </button>
+                    </div>
+                </div>
                 
-                <div class="flex flex-center gap-2">
-                    <button id="createRoomBtn" class="btn btn-primary">Create Room</button>
-                    <button id="joinRoomBtn" class="btn btn-secondary">Join Room</button>
+                <div class="menu-section">
+                    <h2>👤 Profile & Stats</h2>
+                    <div class="menu-buttons">
+                        <button id="profileBtn" class="btn btn-secondary btn-large">
+                            <span class="btn-icon">📊</span>
+                            My Profile
+                        </button>
+                        <button id="leaderboardBtn" class="btn btn-secondary btn-large">
+                            <span class="btn-icon">🏆</span>
+                            Leaderboard
+                        </button>
+                    </div>
                 </div>
             </div>
             
-            <div class="card">
-                <h3 class="card-title">How to Play</h3>
-                <div class="game-rules">
+            <div class="card how-to-play">
+                <h3>🎯 How to Play</h3>
+                <div class="rules-grid">
                     <div class="rule-item">
                         <strong>1. Join a Room:</strong> Create or join a game room with 3-12 players
                     </div>
@@ -52,65 +205,154 @@
         </div>
     </div>
 
-    <!-- Create Room Screen -->
+    <!-- Enhanced Create Room Screen -->
     <div id="createRoomScreen" class="screen hidden">
         <div class="container">
             <div class="header">
-                <h1>Create Room</h1>
+                <h1>Create New Room</h1>
                 <button class="btn btn-secondary back-btn">← Back to Menu</button>
             </div>
             
             <div class="card">
                 <form id="createRoomForm">
-                    <div class="form-group">
-                        <label class="form-label" for="username">Your Username</label>
-                        <input type="text" id="username" name="username" class="form-input" placeholder="Enter your username" required>
+                    <div class="form-sections">
+                        <div class="form-section">
+                            <h3>📝 Basic Settings</h3>
+                            
+                            <div class="form-group">
+                                <label class="form-label" for="roomName">Room Name</label>
+                                <input type="text" id="roomName" name="roomName" class="form-input" placeholder="Enter room name" required>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label class="form-label" for="description">Description (Optional)</label>
+                                <textarea id="description" name="description" class="form-input" rows="3" placeholder="Describe your room..."></textarea>
+                            </div>
+                            
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label class="form-label" for="maxPlayers">Max Players</label>
+                                    <select id="maxPlayers" name="maxPlayers" class="form-input" required>
+                                        <option value="4">4 Players</option>
+                                        <option value="5">5 Players</option>
+                                        <option value="6" selected>6 Players</option>
+                                        <option value="7">7 Players</option>
+                                        <option value="8">8 Players</option>
+                                        <option value="10">10 Players</option>
+                                        <option value="12">12 Players</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label" for="totalRounds">Number of Rounds</label>
+                                    <select id="totalRounds" name="totalRounds" class="form-input" required>
+                                        <option value="3">3 Rounds</option>
+                                        <option value="5" selected>5 Rounds</option>
+                                        <option value="7">7 Rounds</option>
+                                        <option value="10">10 Rounds</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="form-section">
+                            <h3>🎲 Game Settings</h3>
+                            
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label class="form-label" for="difficultyLevel">Difficulty Level</label>
+                                    <select id="difficultyLevel" name="difficultyLevel" class="form-input">
+                                        <option value="easy">Easy (1-2)</option>
+                                        <option value="medium">Medium (2-3)</option>
+                                        <option value="hard">Hard (3-4)</option>
+                                        <option value="expert">Expert (4-5)</option>
+                                        <option value="mixed" selected>Mixed Difficulty</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label" for="categoryPreference">Category Preference</label>
+                                    <select id="categoryPreference" name="categoryPreference" class="form-input">
+                                        <option value="">All Categories</option>
+                                        <option value="lifestyle">Lifestyle & Habits</option>
+                                        <option value="preferences">Preferences & Opinions</option>
+                                        <option value="experiences">Experiences</option>
+                                        <option value="hypothetical">Hypothetical</option>
+                                        <option value="general">General</option>
+                                    </select>
+                                </div>
+                            </div>
+                            
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label class="form-label" for="discussionTime">Discussion Time (seconds)</label>
+                                    <select id="discussionTime" name="discussionTime" class="form-input">
+                                        <option value="120">2 minutes</option>
+                                        <option value="180" selected>3 minutes</option>
+                                        <option value="240">4 minutes</option>
+                                        <option value="300">5 minutes</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label" for="votingTime">Voting Time (seconds)</label>
+                                    <select id="votingTime" name="votingTime" class="form-input">
+                                        <option value="30">30 seconds</option>
+                                        <option value="60" selected>1 minute</option>
+                                        <option value="90">1.5 minutes</option>
+                                        <option value="120">2 minutes</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="form-section">
+                            <h3>🔒 Privacy & Options</h3>
+                            
+                            <div class="form-group">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="isPrivate" name="isPrivate">
+                                    <span class="checkmark"></span>
+                                    Private Room (requires room code to join)
+                                </label>
+                            </div>
+                            
+                            <div class="form-group" id="passwordGroup" style="display: none;">
+                                <label class="form-label" for="password">Room Password (Optional)</label>
+                                <input type="password" id="password" name="password" class="form-input" placeholder="Enter password for extra security">
+                            </div>
+                            
+                            <div class="form-group">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="allowRejoining" name="allowRejoining" checked>
+                                    <span class="checkmark"></span>
+                                    Allow players to rejoin if disconnected
+                                </label>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="spectatorsAllowed" name="spectatorsAllowed">
+                                    <span class="checkmark"></span>
+                                    Allow spectators
+                                </label>
+                            </div>
+                        </div>
                     </div>
                     
-                    <div class="form-group">
-                        <label class="form-label" for="roomName">Room Name</label>
-                        <input type="text" id="roomName" name="roomName" class="form-input" placeholder="Enter room name" required>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label class="form-label" for="maxPlayers">Max Players</label>
-                        <select id="maxPlayers" name="maxPlayers" class="form-input" required>
-                            <option value="4">4 Players</option>
-                            <option value="5">5 Players</option>
-                            <option value="6" selected>6 Players</option>
-                            <option value="7">7 Players</option>
-                            <option value="8">8 Players</option>
-                            <option value="10">10 Players</option>
-                            <option value="12">12 Players</option>
-                        </select>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label class="form-label" for="totalRounds">Number of Rounds</label>
-                        <select id="totalRounds" name="totalRounds" class="form-input" required>
-                            <option value="3">3 Rounds</option>
-                            <option value="5" selected>5 Rounds</option>
-                            <option value="7">7 Rounds</option>
-                            <option value="10">10 Rounds</option>
-                        </select>
-                    </div>
-                    
-                    <button type="submit" class="btn btn-primary">Create Room</button>
+                    <button type="submit" class="btn btn-primary btn-full">Create Room</button>
                 </form>
             </div>
         </div>
     </div>
 
-    <!-- Join Room Screen -->
+    <!-- Enhanced Join Room Screen -->
     <div id="joinRoomScreen" class="screen hidden">
         <div class="container">
             <div class="header">
-                <h1>Join Room</h1>
+                <h1>Join Public Room</h1>
                 <button class="btn btn-secondary back-btn">← Back to Menu</button>
             </div>
             
             <div class="card">
-                <h3 class="card-title">Available Rooms</h3>
+                <h3 class="card-title">Available Public Rooms</h3>
                 <div id="availableRooms" class="mb-3">
                     <div class="loading">
                         <div class="spinner"></div>
@@ -121,13 +363,13 @@
                     <input type="hidden" id="selectedRoomId" name="roomId" required>
                     
                     <div class="form-group">
-                        <label class="form-label" for="joinUsername">Your Username</label>
-                        <input type="text" id="joinUsername" name="username" class="form-input" placeholder="Enter your username" required>
+                        <label class="form-label" for="joinNickname">Your Display Name</label>
+                        <input type="text" id="joinNickname" name="nickname" class="form-input" placeholder="Enter your display name" required>
                     </div>
                     
-                    <div class="form-group">
-                        <label class="form-label" for="nickname">Your Nickname</label>
-                        <input type="text" id="nickname" name="nickname" class="form-input" placeholder="Enter your display name" required>
+                    <div class="form-group" id="joinPasswordGroup" style="display: none;">
+                        <label class="form-label" for="joinPassword">Room Password</label>
+                        <input type="password" id="joinPassword" name="password" class="form-input" placeholder="Enter room password">
                     </div>
                     
                     <button type="submit" class="btn btn-primary">Join Selected Room</button>
@@ -136,12 +378,135 @@
         </div>
     </div>
 
-    <!-- Lobby Screen -->
+    <!-- Join by Code Screen -->
+    <div id="joinByCodeScreen" class="screen hidden">
+        <div class="container">
+            <div class="header">
+                <h1>Join by Room Code</h1>
+                <button class="btn btn-secondary back-btn">← Back to Menu</button>
+            </div>
+            
+            <div class="card">
+                <h3 class="card-title">Enter Room Code</h3>
+                <p>Got a room code from a friend? Enter it below to join their private game!</p>
+                
+                <form id="joinByCodeForm">
+                    <div class="form-group">
+                        <label class="form-label" for="roomCode">6-Character Room Code</label>
+                        <input type="text" id="roomCode" name="roomCode" class="form-input room-code-input" placeholder="ABC123" maxlength="6" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label" for="codeNickname">Your Display Name</label>
+                        <input type="text" id="codeNickname" name="nickname" class="form-input" placeholder="Enter your display name" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label" for="codePassword">Room Password (if required)</label>
+                        <input type="password" id="codePassword" name="password" class="form-input" placeholder="Enter password if room is protected">
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary btn-full">Join Room</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Enhanced Profile Screen -->
+    <div id="profileScreen" class="screen hidden">
+        <div class="container">
+            <div class="header">
+                <h1>My Profile</h1>
+                <button class="btn btn-secondary back-btn">← Back to Menu</button>
+            </div>
+            
+            <div id="profileContainer">
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <p>Loading profile...</p>
+                </div>
+            </div>
+            
+            <!-- Profile Update Form -->
+            <div class="card">
+                <h3>Update Profile</h3>
+                <form id="profileUpdateForm">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label" for="updateAvatar">Avatar</label>
+                            <select id="updateAvatar" name="avatar" class="form-input">
+                                <option value="detective_1">🕵️ Detective Classic</option>
+                                <option value="detective_2">👨‍💼 Business Detective</option>
+                                <option value="detective_3">👩‍💼 Lady Detective</option>
+                                <option value="spy_1">🕴️ Secret Agent</option>
+                                <option value="ninja_1">🥷 Ninja</option>
+                                <option value="robot_1">🤖 Android</option>
+                                <option value="alien_1">👽 Alien</option>
+                                <option value="ghost_1">👻 Ghost</option>
+                                <option value="wizard_1">🧙‍♂️ Wizard</option>
+                                <option value="witch_1">🧙‍♀️ Witch</option>
+                                <option value="pirate_1">🏴‍☠️ Pirate</option>
+                                <option value="superhero_1">🦸‍♂️ Hero</option>
+                                <option value="superhero_2">🦸‍♀️ Heroine</option>
+                                <option value="vampire_1">🧛‍♂️ Vampire</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="updatePreferredCategory">Preferred Question Category</label>
+                            <select id="updatePreferredCategory" name="preferred_category" class="form-input">
+                                <option value="">No Preference</option>
+                                <option value="lifestyle">Lifestyle & Habits</option>
+                                <option value="preferences">Preferences & Opinions</option>
+                                <option value="experiences">Experiences</option>
+                                <option value="hypothetical">Hypothetical</option>
+                                <option value="general">General</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label" for="updateBio">Bio (Optional)</label>
+                        <textarea id="updateBio" name="bio" class="form-input" rows="3" placeholder="Tell other players about yourself..."></textarea>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary">Update Profile</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Leaderboard Screen -->
+    <div id="leaderboardScreen" class="screen hidden">
+        <div class="container">
+            <div class="header">
+                <h1>🏆 Leaderboard</h1>
+                <button class="btn btn-secondary back-btn">← Back to Menu</button>
+            </div>
+            
+            <div class="card">
+                <div class="leaderboard-tabs">
+                    <button class="tab-btn active" data-leaderboard="score">Top Score</button>
+                    <button class="tab-btn" data-leaderboard="wins">Most Wins</button>
+                    <button class="tab-btn" data-leaderboard="win_rate">Best Win Rate</button>
+                </div>
+                
+                <div id="leaderboardContainer">
+                    <div class="loading">
+                        <div class="spinner"></div>
+                        <p>Loading leaderboard...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Enhanced Lobby Screen -->
     <div id="lobbyScreen" class="screen hidden">
         <div class="container">
             <div class="header">
                 <h1 id="lobbyRoomName">Game Lobby</h1>
                 <div class="room-info">
+                    <span>Room Code: <strong id="lobbyRoomCode">------</strong></span>
                     <span>Players: <span id="lobbyPlayerCount">0/0</span></span>
                 </div>
             </div>
@@ -149,31 +514,42 @@
             <div class="card">
                 <div class="card-header">
                     <h3 class="card-title">Players in Room</h3>
-                    <button id="startGameBtn" class="btn btn-success hidden">Start Game</button>
+                    <div class="lobby-actions">
+                        <button id="toggleReadyBtn" class="btn btn-secondary">Ready</button>
+                        <button id="startGameBtn" class="btn btn-success hidden">Start Game</button>
+                        <button id="leaveRoomBtn" class="btn btn-error">Leave Room</button>
+                    </div>
                 </div>
                 
                 <div id="lobbyPlayers" class="players-grid">
                     <!-- Players will be populated here -->
                 </div>
                 
-                <div class="text-center">
+                <div id="lobbyStatus" class="text-center">
                     <p class="mb-2">Waiting for more players...</p>
                     <p><small>Need at least 3 players to start the game</small></p>
                 </div>
             </div>
             
-            <div class="text-center">
-                <button class="btn btn-secondary back-btn">Leave Room</button>
+            <!-- Room Settings Display -->
+            <div class="card">
+                <h3>🎲 Game Settings</h3>
+                <div id="roomSettingsDisplay" class="settings-display">
+                    <!-- Settings will be populated here -->
+                </div>
             </div>
         </div>
     </div>
 
-    <!-- Game Screen -->
+    <!-- Enhanced Game Screen -->
     <div id="gameScreen" class="screen hidden">
         <div class="container">
             <div class="header">
                 <h1>Round <span id="currentRoundNumber">1</span> of <span id="totalRounds">5</span></h1>
                 <div id="roleIndicator" class="role-indicator"></div>
+                <div class="game-timer" id="gameTimer" style="display: none;">
+                    <span id="timerDisplay">3:00</span>
+                </div>
             </div>
             
             <div class="game-phase">
@@ -185,6 +561,7 @@
             <div class="question-card">
                 <div id="questionCategory" class="question-category">Category</div>
                 <div id="questionText" class="question-text">Loading question...</div>
+                <div id="questionHint" class="question-hint" style="display: none;"></div>
             </div>
             
             <!-- Answer Section -->
@@ -193,9 +570,10 @@
                 <form id="answerForm">
                     <div class="form-group">
                         <label class="form-label" for="answerInput">Your numerical answer:</label>
-                        <input type="number" id="answerInput" name="answer" class="form-input" placeholder="Enter a number" required>
+                        <input type="number" id="answerInput" name="answer" class="form-input answer-input" placeholder="Enter a number" required>
+                        <small class="form-help">Think carefully - your answer should fit the question!</small>
                     </div>
-                    <button type="submit" class="btn btn-primary">Submit Answer</button>
+                    <button type="submit" class="btn btn-primary btn-full">Submit Answer</button>
                 </form>
             </div>
             
@@ -205,7 +583,7 @@
                 <div id="answersDisplay">
                     <!-- Answers will be displayed here -->
                 </div>
-                <div class="text-center">
+                <div class="discussion-actions text-center">
                     <p class="mb-2">Discuss the answers with other players!</p>
                     <p><small>Try to identify which answer doesn't fit the question</small></p>
                     <button id="startVotingBtn" class="btn btn-warning">Start Voting</button>
@@ -222,7 +600,7 @@
                 </div>
                 
                 <div class="text-center">
-                    <button id="submitVoteBtn" class="btn btn-error">Submit Vote</button>
+                    <button id="submitVoteBtn" class="btn btn-error" disabled>Submit Vote</button>
                 </div>
             </div>
             
@@ -237,11 +615,13 @@
                 </div>
             </div>
             
-            <!-- Players Status -->
-            <div class="card">
-                <h3 class="card-title">Players</h3>
-                <div id="gamePlayers" class="players-grid">
-                    <!-- Players will be populated here -->
+            <!-- Players Status Sidebar -->
+            <div class="game-sidebar">
+                <div class="card">
+                    <h3 class="card-title">Players</h3>
+                    <div id="gamePlayers" class="players-list">
+                        <!-- Players will be populated here -->
+                    </div>
                 </div>
             </div>
         </div>
@@ -251,11 +631,11 @@
     <div id="resultsScreen" class="screen hidden">
         <div class="container">
             <div class="header">
-                <h1>Game Results</h1>
+                <h1>🎉 Game Results</h1>
             </div>
             
             <div class="card results-card">
-                <h2 class="text-center mb-2">🎉 Game Complete!</h2>
+                <h2 class="text-center mb-2">Game Complete!</h2>
                 <div id="finalResults">
                     <!-- Final results will be displayed here -->
                 </div>
@@ -266,6 +646,50 @@
         </div>
     </div>
 
-    <script src="{% static 'js/app.js' %}"></script>
+    <!-- Loading Overlay -->
+    <div id="loadingOverlay" class="loading-overlay hidden">
+        <div class="loading-content">
+            <div class="spinner large"></div>
+            <p>Loading...</p>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="/static/js/auth.js"></script>
+    <script src="/static/js/app.js"></script>
+    
+    <script>
+        // Additional JavaScript for form interactions
+        document.addEventListener('DOMContentLoaded', function() {
+            // Toggle password field for private rooms
+            const isPrivateCheckbox = document.getElementById('isPrivate');
+            const passwordGroup = document.getElementById('passwordGroup');
+            
+            if (isPrivateCheckbox && passwordGroup) {
+                isPrivateCheckbox.addEventListener('change', function() {
+                    passwordGroup.style.display = this.checked ? 'block' : 'none';
+                });
+            }
+            
+            // Auto-uppercase room codes
+            const roomCodeInput = document.getElementById('roomCode');
+            if (roomCodeInput) {
+                roomCodeInput.addEventListener('input', function() {
+                    this.value = this.value.toUpperCase();
+                });
+            }
+            
+            // Tab switching functionality
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    const tabName = this.getAttribute('data-tab');
+                    if (tabName && window.game) {
+                        window.game.switchTab(tabName);
+                    }
+                });
+            });
+        });
+    </script>
 </body>
 </html>

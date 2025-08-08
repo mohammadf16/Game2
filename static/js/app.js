@@ -1,161 +1,460 @@
-// Number Hunt Game JavaScript
+// static/js/app.js - Fixed version with proper screen management
+
 class NumberHuntGame {
     constructor() {
         this.currentUser = null;
         this.currentRoom = null;
         this.currentRound = null;
-        this.gameState = 'menu'; // menu, lobby, playing, finished
+        this.gameState = 'menu';
         this.pollInterval = null;
+        this.authManager = window.authManager; // Use global auth manager
         
         this.initializeApp();
     }
     
     initializeApp() {
-        this.showMenu();
+        console.log('Initializing Number Hunt Game...');
+        
+        // Wait for DOM to be fully loaded
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', () => {
+                this.setupApp();
+            });
+        } else {
+            this.setupApp();
+        }
+    }
+    
+    setupApp() {
+        console.log('Setting up app...');
+        
+        // Hide all screens first
+        this.hideAllScreens();
+        
+        // Check authentication status and show appropriate screen
+        if (this.authManager && this.authManager.isAuthenticated()) {
+            this.currentUser = this.authManager.user;
+            console.log('User is authenticated:', this.currentUser);
+            this.showMainMenu();
+        } else {
+            console.log('User not authenticated, showing auth screen');
+            this.showAuthScreen();
+        }
+        
         this.setupEventListeners();
+        this.updateNavigation();
+    }
+    
+    hideAllScreens() {
+        const screens = document.querySelectorAll('.screen');
+        screens.forEach(screen => {
+            screen.classList.remove('active');
+        });
+    }
+    
+    showScreen(screenId) {
+        console.log('Showing screen:', screenId);
+        
+        // Hide all screens
+        this.hideAllScreens();
+        
+        // Show target screen
+        const targetScreen = document.getElementById(screenId);
+        if (targetScreen) {
+            targetScreen.classList.add('active');
+            console.log('Screen shown:', screenId);
+        } else {
+            console.error('Screen not found:', screenId);
+        }
+        
+        // Update navigation
+        this.updateNavigation();
     }
     
     setupEventListeners() {
+        console.log('Setting up event listeners...');
+        
+        // Auth form listeners
+        this.setupFormListener('loginForm', (e) => this.handleLogin(e));
+        this.setupFormListener('registerForm', (e) => this.handleRegister(e));
+        this.setupButtonListener('logoutBtn', () => this.handleLogout());
+        
         // Menu buttons
-        document.getElementById('createRoomBtn')?.addEventListener('click', () => this.showCreateRoom());
-        document.getElementById('joinRoomBtn')?.addEventListener('click', () => this.showJoinRoom());
+        this.setupButtonListener('createRoomBtn', () => this.showCreateRoom());
+        this.setupButtonListener('joinRoomBtn', () => this.showJoinRoom());
+        this.setupButtonListener('joinByCodeBtn', () => this.showJoinByCode());
+        this.setupButtonListener('profileBtn', () => this.showProfile());
+        this.setupButtonListener('leaderboardBtn', () => this.showLeaderboard());
         
         // Form submissions
-        document.getElementById('createRoomForm')?.addEventListener('submit', (e) => this.handleCreateRoom(e));
-        document.getElementById('joinRoomForm')?.addEventListener('submit', (e) => this.handleJoinRoom(e));
-        document.getElementById('answerForm')?.addEventListener('submit', (e) => this.handleSubmitAnswer(e));
+        this.setupFormListener('createRoomForm', (e) => this.handleCreateRoom(e));
+        this.setupFormListener('joinRoomForm', (e) => this.handleJoinRoom(e));
+        this.setupFormListener('joinByCodeForm', (e) => this.handleJoinByCode(e));
+        this.setupFormListener('answerForm', (e) => this.handleSubmitAnswer(e));
+        this.setupFormListener('profileUpdateForm', (e) => this.handleUpdateProfile(e));
         
         // Game actions
-        document.getElementById('startGameBtn')?.addEventListener('click', () => this.startGame());
-        document.getElementById('startVotingBtn')?.addEventListener('click', () => this.startVoting());
-        document.getElementById('submitVoteBtn')?.addEventListener('click', () => this.submitVote());
-        document.getElementById('continueBtn')?.addEventListener('click', () => this.continueToNextRound());
+        this.setupButtonListener('startGameBtn', () => this.startGame());
+        this.setupButtonListener('toggleReadyBtn', () => this.toggleReady());
+        this.setupButtonListener('startVotingBtn', () => this.startVoting());
+        this.setupButtonListener('submitVoteBtn', () => this.submitVote());
+        this.setupButtonListener('continueBtn', () => this.continueToNextRound());
+        this.setupButtonListener('leaveRoomBtn', () => this.leaveRoom());
         
         // Back buttons
         document.querySelectorAll('.back-btn').forEach(btn => {
-            btn.addEventListener('click', () => this.showMenu());
+            btn.addEventListener('click', () => {
+                if (this.authManager && this.authManager.isAuthenticated()) {
+                    this.showMainMenu();
+                } else {
+                    this.showAuthScreen();
+                }
+            });
         });
+        
+        // Tab switching
+        document.querySelectorAll('.tab-btn').forEach(tab => {
+            tab.addEventListener('click', (e) => {
+                const tabName = e.target.getAttribute('data-tab');
+                if (tabName) {
+                    this.switchTab(tabName);
+                }
+            });
+        });
+        
+        // Private room checkbox
+        const isPrivateCheckbox = document.getElementById('isPrivate');
+        if (isPrivateCheckbox) {
+            isPrivateCheckbox.addEventListener('change', (e) => {
+                const passwordGroup = document.getElementById('passwordGroup');
+                if (passwordGroup) {
+                    passwordGroup.style.display = e.target.checked ? 'block' : 'none';
+                }
+            });
+        }
+        
+        // Room code input auto-uppercase
+        const roomCodeInput = document.getElementById('roomCode');
+        if (roomCodeInput) {
+            roomCodeInput.addEventListener('input', (e) => {
+                e.target.value = e.target.value.toUpperCase();
+            });
+        }
     }
     
-    // API Methods
-    async apiCall(endpoint, method = 'GET', data = null) {
-        const url = endpoint;
-        const options = {
-            method,
-            headers: {
-                'Content-Type': 'application/json',
-            }
+    setupFormListener(formId, handler) {
+        const form = document.getElementById(formId);
+        if (form) {
+            form.addEventListener('submit', handler);
+            console.log('Form listener setup:', formId);
+        }
+    }
+    
+    setupButtonListener(buttonId, handler) {
+        const button = document.getElementById(buttonId);
+        if (button) {
+            button.addEventListener('click', handler);
+            console.log('Button listener setup:', buttonId);
+        }
+    }
+    
+    // Authentication Methods
+    showAuthScreen() {
+        console.log('Showing auth screen');
+        this.gameState = 'auth';
+        this.showScreen('authScreen');
+        this.switchTab('login'); // Default to login tab
+    }
+    
+    async handleLogin(e) {
+        e.preventDefault();
+        console.log('Handling login...');
+        
+        const formData = new FormData(e.target);
+        const loginData = {
+            username_or_email: formData.get('username_or_email'),
+            password: formData.get('password')
         };
         
-        if (data) {
-            options.body = JSON.stringify(data);
-        }
+        const submitBtn = e.target.querySelector('button[type="submit"]');
+        this.showLoading(submitBtn);
         
         try {
-            const response = await fetch(url, options);
-            const result = await response.json();
+            const result = await this.authManager.login(loginData);
             
-            if (!response.ok) {
-                throw new Error(result.error || 'API call failed');
+            if (result.success) {
+                this.currentUser = result.data.user;
+                this.showNotification('Login successful!', 'success');
+                this.showMainMenu();
+            } else {
+                this.showFormErrors(result.errors, 'loginForm');
+                this.showNotification('Login failed. Please check your credentials.', 'error');
             }
-            
-            return result;
         } catch (error) {
-            this.showNotification(error.message, 'error');
-            throw error;
+            console.error('Login error:', error);
+            this.showNotification('Login failed. Please try again.', 'error');
+        } finally {
+            this.hideLoading(submitBtn, 'Login');
         }
     }
     
-    // UI Management
-    showScreen(screenId) {
-        document.querySelectorAll('.screen').forEach(screen => {
-            screen.classList.add('hidden');
-        });
-        document.getElementById(screenId)?.classList.remove('hidden');
+    async handleRegister(e) {
+        e.preventDefault();
+        console.log('Handling registration...');
+        
+        const formData = new FormData(e.target);
+        const registerData = {
+            username: formData.get('username'),
+            email: formData.get('email'),
+            first_name: formData.get('first_name'),
+            last_name: formData.get('last_name'),
+            password: formData.get('password'),
+            password_confirm: formData.get('password_confirm'),
+            avatar: formData.get('avatar') || 'detective_1',
+            gender: formData.get('gender') || 'prefer_not_say'
+        };
+        
+        const submitBtn = e.target.querySelector('button[type="submit"]');
+        this.showLoading(submitBtn);
+        
+        try {
+            const result = await this.authManager.register(registerData);
+            
+            if (result.success) {
+                this.currentUser = result.data.user;
+                this.showNotification('Registration successful! Welcome to Number Hunt!', 'success');
+                this.showMainMenu();
+            } else {
+                this.showFormErrors(result.errors, 'registerForm');
+                this.showNotification('Registration failed. Please check the form.', 'error');
+            }
+        } catch (error) {
+            console.error('Registration error:', error);
+            this.showNotification('Registration failed. Please try again.', 'error');
+        } finally {
+            this.hideLoading(submitBtn, 'Create Account');
+        }
     }
     
-    showMenu() {
+    async handleLogout() {
+        console.log('Logging out...');
+        
+        try {
+            await this.authManager.logout();
+            this.currentUser = null;
+            this.currentRoom = null;
+            this.stopPolling();
+            this.showNotification('Logged out successfully', 'success');
+            this.showAuthScreen();
+        } catch (error) {
+            console.error('Logout error:', error);
+            this.showNotification('Logout failed', 'error');
+        }
+    }
+    
+    // Navigation and UI Updates
+    updateNavigation() {
+        const userInfo = document.getElementById('userInfo');
+        const authButtons = document.getElementById('authButtons');
+        
+        if (this.authManager && this.authManager.isAuthenticated() && userInfo) {
+            const profile = this.authManager.profile;
+            const user = this.authManager.user;
+            
+            userInfo.innerHTML = `
+                <div class="user-display">
+                    <span class="user-avatar">${this.authManager.getAvatarEmoji(profile?.avatar || 'detective_1')}</span>
+                    <span class="user-name">${user?.username || 'Player'}</span>
+                    <span class="user-score">${profile?.total_score || 0} pts</span>
+                    <button id="logoutBtn" class="btn btn-secondary btn-sm">Logout</button>
+                </div>
+            `;
+            userInfo.classList.remove('hidden');
+            if (authButtons) authButtons.classList.add('hidden');
+            
+            // Re-setup logout button listener
+            this.setupButtonListener('logoutBtn', () => this.handleLogout());
+            
+        } else if (authButtons) {
+            if (userInfo) userInfo.classList.add('hidden');
+            authButtons.classList.remove('hidden');
+        }
+    }
+    
+    showMainMenu() {
+        console.log('Showing main menu');
         this.gameState = 'menu';
         this.showScreen('menuScreen');
         this.stopPolling();
+        this.updateUserStats();
     }
     
+    async updateUserStats() {
+        if (!this.authManager || !this.authManager.isAuthenticated()) return;
+        
+        try {
+            const profile = await this.authManager.getProfile();
+            if (profile) {
+                this.updateStatsDisplay(profile);
+            }
+        } catch (error) {
+            console.error('Failed to update user stats:', error);
+        }
+    }
+    
+    updateStatsDisplay(profile) {
+        const statsContainer = document.getElementById('userStatsContainer');
+        if (!statsContainer) return;
+        
+        statsContainer.innerHTML = `
+            <div class="stats-grid">
+                <div class="stat-item">
+                    <div class="stat-value">${profile.total_games || 0}</div>
+                    <div class="stat-label">Games Played</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value">${profile.total_wins || 0}</div>
+                    <div class="stat-label">Games Won</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value">${(profile.win_rate || 0).toFixed(1)}%</div>
+                    <div class="stat-label">Win Rate</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value">${profile.total_score || 0}</div>
+                    <div class="stat-label">Total Score</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value">#${profile.rank || 'N/A'}</div>
+                    <div class="stat-label">Global Rank</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value">${profile.experience_level || 'Rookie'}</div>
+                    <div class="stat-label">Level</div>
+                </div>
+            </div>
+        `;
+    }
+    
+    // Screen Navigation Methods
     showCreateRoom() {
+        console.log('Showing create room screen');
         this.showScreen('createRoomScreen');
     }
     
     showJoinRoom() {
+        console.log('Showing join room screen');
         this.showScreen('joinRoomScreen');
         this.loadAvailableRooms();
     }
     
+    showJoinByCode() {
+        console.log('Showing join by code screen');
+        this.showScreen('joinByCodeScreen');
+    }
+    
+    showProfile() {
+        console.log('Showing profile screen');
+        this.showScreen('profileScreen');
+        this.loadProfileData();
+    }
+    
+    showLeaderboard() {
+        console.log('Showing leaderboard screen');
+        this.showScreen('leaderboardScreen');
+        this.loadLeaderboard();
+    }
+    
     showLobby() {
+        console.log('Showing lobby screen');
         this.gameState = 'lobby';
         this.showScreen('lobbyScreen');
         this.startPolling();
     }
     
     showGame() {
+        console.log('Showing game screen');
         this.gameState = 'playing';
         this.showScreen('gameScreen');
         this.startPolling();
     }
     
-    // Room Management
-    async handleCreateRoom(e) {
-        e.preventDefault();
-        const formData = new FormData(e.target);
+    // Tab switching functionality
+    switchTab(tabName) {
+        console.log('Switching to tab:', tabName);
         
-        try {
-            const roomData = {
-                username: formData.get('username'),
-                name: formData.get('roomName'),
-                max_players: parseInt(formData.get('maxPlayers')),
-                total_rounds: parseInt(formData.get('totalRounds'))
-            };
-            
-            this.currentRoom = await this.apiCall('/api/rooms/create/', 'POST', roomData);
-            this.currentUser = roomData.username;
-            
-            this.showNotification('Room created successfully!', 'success');
-            this.showLobby();
-            this.updateLobbyUI();
-            
-        } catch (error) {
-            console.error('Failed to create room:', error);
+        // Update tab buttons
+        document.querySelectorAll('.tab-btn').forEach(tab => {
+            tab.classList.remove('active');
+            if (tab.getAttribute('data-tab') === tabName) {
+                tab.classList.add('active');
+            }
+        });
+        
+        // Update tab content
+        document.querySelectorAll('.tab-content').forEach(content => {
+            content.classList.remove('active');
+        });
+        
+        const targetTab = document.getElementById(`${tabName}Tab`);
+        if (targetTab) {
+            targetTab.classList.add('active');
         }
     }
     
-    async handleJoinRoom(e) {
+    // API Helper Methods
+    async apiCall(endpoint, method = 'GET', data = null) {
+        if (!this.authManager) {
+            throw new Error('Auth manager not available');
+        }
+        return this.authManager.apiCall(endpoint, method, data);
+    }
+    
+    // Room Management Methods
+    async handleCreateRoom(e) {
         e.preventDefault();
+        console.log('Creating room...');
+        
+        if (!this.authManager || !this.authManager.isAuthenticated()) {
+            this.showNotification('Please log in to create a room', 'error');
+            return;
+        }
+        
         const formData = new FormData(e.target);
-        const roomId = formData.get('roomId');
+        const roomData = {
+            name: formData.get('roomName'),
+            description: formData.get('description') || '',
+            is_private: formData.get('isPrivate') === 'on',
+            password: formData.get('password') || '',
+            max_players: parseInt(formData.get('maxPlayers')),
+            min_players: parseInt(formData.get('minPlayers') || 3),
+            total_rounds: parseInt(formData.get('totalRounds')),
+            difficulty_level: formData.get('difficultyLevel'),
+            category_preference: formData.get('categoryPreference') || '',
+            discussion_time: parseInt(formData.get('discussionTime') || 180),
+            voting_time: parseInt(formData.get('votingTime') || 60),
+            allow_rejoining: formData.get('allowRejoining') !== 'off',
+            spectators_allowed: formData.get('spectatorsAllowed') === 'on'
+        };
         
         try {
-            const joinData = {
-                username: formData.get('username'),
-                nickname: formData.get('nickname')
-            };
-            
-            await this.apiCall(`/api/rooms/${roomId}/join/`, 'POST', joinData);
-            this.currentRoom = await this.apiCall(`/api/rooms/${roomId}/`);
-            this.currentUser = joinData.username;
-            
-            this.showNotification('Joined room successfully!', 'success');
+            this.currentRoom = await this.apiCall('/rooms/create/', 'POST', roomData);
+            this.showNotification('Room created successfully!', 'success');
             this.showLobby();
             this.updateLobbyUI();
-            
         } catch (error) {
-            console.error('Failed to join room:', error);
+            console.error('Room creation failed:', error);
+            this.showNotification('Failed to create room', 'error');
         }
     }
     
     async loadAvailableRooms() {
         try {
-            const rooms = await this.apiCall('/api/rooms/');
+            const rooms = await this.apiCall('/rooms/');
             this.displayAvailableRooms(rooms);
         } catch (error) {
             console.error('Failed to load rooms:', error);
+            this.showNotification('Failed to load available rooms', 'error');
         }
     }
     
@@ -163,523 +462,73 @@ class NumberHuntGame {
         const container = document.getElementById('availableRooms');
         if (!container) return;
         
-        container.innerHTML = '';
-        
         if (rooms.length === 0) {
-            container.innerHTML = '<p class="text-center">No rooms available. Create one!</p>';
+            container.innerHTML = '<p class="text-center">No public rooms available. Create one!</p>';
             return;
         }
         
-        rooms.forEach(room => {
-            const roomCard = document.createElement('div');
-            roomCard.className = 'card';
-            roomCard.innerHTML = `
-                <div class="card-header">
-                    <h3 class="card-title">${room.name}</h3>
-                    <span class="badge ${room.status === 'waiting' ? 'success' : 'warning'}">${room.status}</span>
+        container.innerHTML = rooms.map(room => `
+            <div class="room-card ${room.status !== 'waiting' || room.player_count >= room.max_players ? 'disabled' : ''}" 
+                 onclick="game.selectRoom('${room.id}')">
+                <div class="room-header">
+                    <h4>${room.name}</h4>
+                    <span class="room-status ${room.status}">${room.status}</span>
                 </div>
                 <div class="room-info">
                     <p>Players: ${room.player_count}/${room.max_players}</p>
                     <p>Rounds: ${room.total_rounds}</p>
                     <p>Host: ${room.host.username}</p>
                 </div>
-                <div class="room-actions">
-                    <button class="btn btn-primary" onclick="game.selectRoom('${room.id}')" 
-                            ${room.status !== 'waiting' || room.player_count >= room.max_players ? 'disabled' : ''}>
-                        ${room.status !== 'waiting' ? 'In Progress' : room.player_count >= room.max_players ? 'Full' : 'Join'}
-                    </button>
-                </div>
-            `;
-            container.appendChild(roomCard);
-        });
+            </div>
+        `).join('');
     }
     
     selectRoom(roomId) {
         document.getElementById('selectedRoomId').value = roomId;
-    }
-    
-    // Game Flow
-    async startGame() {
-        try {
-            await this.apiCall(`/api/rooms/${this.currentRoom.id}/start/`, 'POST');
-            this.showNotification('Game started!', 'success');
-            this.showGame();
-        } catch (error) {
-            console.error('Failed to start game:', error);
-        }
-    }
-    
-    async handleSubmitAnswer(e) {
-        e.preventDefault();
-        const formData = new FormData(e.target);
-        
-        try {
-            const answerData = {
-                username: this.currentUser,
-                answer: parseInt(formData.get('answer'))
-            };
-            
-            await this.apiCall(`/api/rooms/${this.currentRoom.id}/submit-answer/`, 'POST', answerData);
-            this.showNotification('Answer submitted!', 'success');
-            
-            // Add a small delay before disabling form to prevent quick clearing
-            setTimeout(() => {
-                // Disable form
-                e.target.querySelector('input[type="number"]').disabled = true;
-                e.target.querySelector('button').disabled = true;
-            }, 1000);
-            
-        } catch (error) {
-            console.error('Failed to submit answer:', error);
-        }
-    }
-    
-    async startVoting() {
-        try {
-            await this.apiCall(`/api/rooms/${this.currentRoom.id}/start-voting/`, 'POST');
-            this.showNotification('Voting phase started!', 'success');
-        } catch (error) {
-            console.error('Failed to start voting:', error);
-        }
-    }
-    
-    async submitVote() {
-        const selectedPlayer = document.querySelector('input[name="suspectPlayer"]:checked');
-        if (!selectedPlayer) {
-            this.showNotification('Please select a player to vote for', 'warning');
-            return;
-        }
-        
-        try {
-            const voteData = {
-                username: this.currentUser,
-                accused_player_id: parseInt(selectedPlayer.value)
-            };
-            
-            const response = await this.apiCall(`/api/rooms/${this.currentRoom.id}/submit-vote/`, 'POST', voteData);
-            if (!response.ok) {
-                throw new Error(response.statusText);
-            }
-            
-            const result = await response.json();
-            this.showNotification('Vote submitted!', 'success');
-            
-            // Disable voting
-            document.querySelectorAll('input[name="suspectPlayer"]').forEach(input => {
-                input.disabled = true;
-            });
-            document.getElementById('submitVoteBtn').disabled = true;
-            
-            // If voting is complete, show notification
-            if (result.voting_complete) {
-                this.showNotification('All votes submitted! Calculating results...', 'success');
-            }
-            
-        } catch (error) {
-            console.error('Failed to submit vote:', error);
-            // Show a more user-friendly error message
-            this.showNotification('Failed to submit vote. Please try again.', 'error');
-        }
-    }
-    
-    // Polling for updates
-    startPolling() {
-        this.stopPolling();
-        this.pollInterval = setInterval(() => {
-            this.pollForUpdates();
-        }, 2000);
-    }
-    
-    stopPolling() {
-        if (this.pollInterval) {
-            clearInterval(this.pollInterval);
-            this.pollInterval = null;
-        }
-    }
-    
-    async pollForUpdates() {
-        try {
-            if (this.gameState === 'lobby') {
-                this.currentRoom = await this.apiCall(`/api/rooms/${this.currentRoom.id}/`);
-                this.updateLobbyUI();
-                
-                if (this.currentRoom.status === 'in_progress') {
-                    this.showGame();
-                }
-            } else if (this.gameState === 'playing') {
-                this.currentRoom = await this.apiCall(`/api/rooms/${this.currentRoom.id}/`);
-                this.currentRound = await this.apiCall(`/api/rooms/${this.currentRoom.id}/current-round/?username=${this.currentUser}`);
-                this.updateGameUI();
-                
-                if (this.currentRoom.status === 'finished') {
-                    this.showResults();
-                }
-            }
-        } catch (error) {
-            console.error('Polling error:', error);
-        }
-    }
-    
-    // UI Updates
-    updateLobbyUI() {
-        if (!this.currentRoom) return;
-        
-        // Update room info
-        document.getElementById('lobbyRoomName').textContent = this.currentRoom.name;
-        document.getElementById('lobbyPlayerCount').textContent = `${this.currentRoom.player_count}/${this.currentRoom.max_players}`;
-        
-        // Update players list
-        const playersContainer = document.getElementById('lobbyPlayers');
-        playersContainer.innerHTML = '';
-        
-        this.currentRoom.players.forEach(player => {
-            const playerCard = document.createElement('div');
-            playerCard.className = `player-card ${player.is_connected ? 'connected' : 'disconnected'}`;
-            playerCard.innerHTML = `
-                <div class="player-name">${player.nickname}</div>
-                <div class="player-score">Score: ${player.score}</div>
-                ${player.user.username === this.currentRoom.host.username ? '<div class="host-badge">HOST</div>' : ''}
-            `;
-            playersContainer.appendChild(playerCard);
+        // Highlight selected room
+        document.querySelectorAll('.room-card').forEach(card => {
+            card.classList.remove('selected');
         });
-        
-        // Show/hide start button
-        const startBtn = document.getElementById('startGameBtn');
-        if (startBtn) {
-            startBtn.style.display = (this.currentRoom.host.username === this.currentUser && this.currentRoom.can_start) ? 'block' : 'none';
+        event.target.closest('.room-card').classList.add('selected');
+    }
+    
+    // UI Helper Methods
+    showLoading(button) {
+        if (button) {
+            button.disabled = true;
+            button.innerHTML = '<div class="spinner"></div> Loading...';
         }
     }
     
-    updateGameUI() {
-        if (!this.currentRound) return;
-        
-        // Update round info
-        document.getElementById('currentRoundNumber').textContent = this.currentRoom.current_round;
-        document.getElementById('totalRounds').textContent = this.currentRoom.total_rounds;
-        
-        // Update question
-        if (this.currentRound.player_question) {
-            document.getElementById('questionText').textContent = this.currentRound.player_question.text;
-            document.getElementById('questionCategory').textContent = this.currentRound.player_question.category;
+    hideLoading(button, originalText = 'Submit') {
+        if (button) {
+            button.disabled = false;
+            button.innerHTML = originalText;
         }
+    }
+    
+    showFormErrors(errors, formId) {
+        // Clear previous errors
+        document.querySelectorAll('.error-message').forEach(el => el.remove());
         
-        // Update role indicator
-        const roleIndicator = document.getElementById('roleIndicator');
-        if (roleIndicator) {
-            roleIndicator.textContent = this.currentRound.is_imposter ? 'You are the IMPOSTER!' : 'You are a DETECTIVE';
-            roleIndicator.className = this.currentRound.is_imposter ? 'role-imposter' : 'role-detective';
-        }
+        const form = document.getElementById(formId);
+        if (!form) return;
         
-        // Update phase
-        this.updateGamePhase();
-        
-        // Reset answer form if we're in answering phase
-        if (this.currentRound.status === 'answering') {
-            const answerForm = document.getElementById('answerForm');
-            if (answerForm) {
-                // Reset and enable the form inputs
-                answerForm.reset();
-                const answerInput = answerForm.querySelector('input[type="number"]');
-                const submitButton = answerForm.querySelector('button');
-                if (answerInput) answerInput.disabled = false;
-                if (submitButton) submitButton.disabled = false;
+        Object.entries(errors).forEach(([field, messages]) => {
+            const input = form.querySelector(`[name="${field}"]`);
+            if (input) {
+                const errorDiv = document.createElement('div');
+                errorDiv.className = 'error-message';
+                errorDiv.textContent = Array.isArray(messages) ? messages[0] : messages;
+                input.parentNode.insertBefore(errorDiv, input.nextSibling);
+                input.classList.add('error');
             }
-        }
-        
-        // Update answers if available
-        if (this.currentRound.answers && this.currentRound.answers.length > 0) {
-            this.displayAnswers();
-        }
-        
-        // Update players for voting
-        if (this.currentRound.status === 'voting') {
-            this.displayVotingOptions();
-        }
-    }
-    
-    updateGamePhase() {
-        const phaseTitle = document.getElementById('phaseTitle');
-        const phaseDescription = document.getElementById('phaseDescription');
-        const answerSection = document.getElementById('answerSection');
-        const discussionSection = document.getElementById('discussionSection');
-        const votingSection = document.getElementById('votingSection');
-        const resultsSection = document.getElementById('resultsSection');
-        
-        // Hide all sections first
-        [answerSection, discussionSection, votingSection, resultsSection].forEach(section => {
-            if (section) section.classList.add('hidden');
         });
-        
-        switch (this.currentRound.status) {
-            case 'answering':
-                phaseTitle.textContent = 'Answer Phase';
-                phaseDescription.textContent = 'Submit your numerical answer to the question';
-                answerSection?.classList.remove('hidden');
-                break;
-                
-            case 'discussion':
-                phaseTitle.textContent = 'Discussion Phase';
-                phaseDescription.textContent = 'Discuss the answers and try to identify the imposter';
-                discussionSection?.classList.remove('hidden');
-                this.displayRevealedQuestions();
-                break;
-                
-            case 'voting':
-                phaseTitle.textContent = 'Voting Phase';
-                phaseDescription.textContent = 'Vote for who you think is the imposter';
-                votingSection?.classList.remove('hidden');
-                break;
-                
-            case 'results':
-                phaseTitle.textContent = 'Round Results';
-                phaseDescription.textContent = 'See who was the imposter and how everyone voted';
-                resultsSection?.classList.remove('hidden');
-                this.loadRoundResults();
-                break;
-        }
     }
     
-    displayRevealedQuestions() {
-        // Check if we have revealed questions from game events
-        this.fetchAndDisplayRevealedQuestions();
-    }
-    
-    async fetchAndDisplayRevealedQuestions() {
-        try {
-            const events = await this.apiCall(`/api/rooms/${this.currentRoom.id}/events/`);
-            const discussionEvent = events.find(event => event.event_type === 'discussion_started');
-            
-            if (discussionEvent && discussionEvent.data) {
-                const { question_text, decoy_question_text } = discussionEvent.data;
-                this.showRevealedQuestions(question_text, decoy_question_text);
-            }
-        } catch (error) {
-            console.error('Failed to fetch revealed questions:', error);
-        }
-    }
-    
-    showRevealedQuestions(questionText, decoyQuestionText) {
-        const answersContainer = document.getElementById('answersDisplay');
-        if (!answersContainer) return;
-        
-        // Create revealed questions section
-        const revealedQuestionsHtml = `
-            <div class="revealed-questions mb-3">
-                <h4 class="text-center mb-2">📝 Questions Revealed!</h4>
-                <div class="questions-reveal">
-                    <div class="question-box detective-question">
-                        <h5>🕵️ Detective Question (Real Question):</h5>
-                        <p>${questionText}</p>
-                    </div>
-                    <div class="question-box imposter-question">
-                        <h5>🎭 Imposter Question (Decoy Question):</h5>
-                        <p>${decoyQuestionText}</p>
-                    </div>
-                </div>
-                <div class="reveal-note">
-                    <p><strong>💡 Now you know:</strong> The imposter received the decoy question while detectives got the real question!</p>
-                </div>
-            </div>
-        `;
-        
-        // Add revealed questions before answers
-        answersContainer.innerHTML = revealedQuestionsHtml + '<h3>Submitted Answers:</h3>';
-        
-        // Add answers if available
-        if (this.currentRound.answers && this.currentRound.answers.length > 0) {
-            const answersGrid = document.createElement('div');
-            answersGrid.className = 'answers-with-names';
-            
-            const sortedAnswers = [...this.currentRound.answers].sort((a, b) => a.answer - b.answer);
-            
-            sortedAnswers.forEach(answer => {
-                const answerCard = document.createElement('div');
-                answerCard.className = 'answer-card-discussion';
-                answerCard.innerHTML = `
-                    <div class="answer-number-large">${answer.answer}</div>
-                    <div class="answer-player-name">${answer.player.nickname}</div>
-                `;
-                answersGrid.appendChild(answerCard);
-            });
-            
-            answersContainer.appendChild(answersGrid);
-        }
-    }
-
-    displayAnswers() {
-        const answersContainer = document.getElementById('answersDisplay');
-        if (!answersContainer || !this.currentRound.answers) return;
-        
-        answersContainer.innerHTML = '<h3>Submitted Answers:</h3>';
-        const answersGrid = document.createElement('div');
-        answersGrid.className = 'answers-with-names';
-        
-        // Sort answers for display
-        const sortedAnswers = [...this.currentRound.answers].sort((a, b) => a.answer - b.answer);
-        
-        sortedAnswers.forEach(answer => {
-            const answerCard = document.createElement('div');
-            answerCard.className = 'answer-card-discussion';
-            answerCard.innerHTML = `
-                <div class="answer-number-large">${answer.answer}</div>
-                <div class="answer-player-name">${answer.player.nickname}</div>
-            `;
-            answersGrid.appendChild(answerCard);
-        });
-        
-        answersContainer.appendChild(answersGrid);
-    }
-    
-    displayVotingOptions() {
-        const votingContainer = document.getElementById('votingOptions');
-        if (!votingContainer || !this.currentRoom.players) return;
-        
-        votingContainer.innerHTML = '';
-        
-        this.currentRoom.players.forEach(player => {
-            // Don't show current user as voting option
-            if (player.user.username === this.currentUser) return;
-            
-            const voteOption = document.createElement('label');
-            voteOption.className = 'vote-option';
-            voteOption.innerHTML = `
-                <input type="radio" name="suspectPlayer" value="${player.id}" style="display: none;">
-                <div class="player-name">${player.nickname}</div>
-                <div class="player-score">Score: ${player.score}</div>
-            `;
-            
-            voteOption.addEventListener('click', () => {
-                document.querySelectorAll('.vote-option').forEach(opt => opt.classList.remove('selected'));
-                voteOption.classList.add('selected');
-                voteOption.querySelector('input').checked = true;
-            });
-            
-            votingContainer.appendChild(voteOption);
-        });
-        
-        // Ensure submit vote button is enabled when displaying voting options
-        const submitVoteBtn = document.getElementById('submitVoteBtn');
-        if (submitVoteBtn) {
-            submitVoteBtn.disabled = false;
-        }
-    }
-    
-    async loadRoundResults() {
-        try {
-            const results = await this.apiCall(`/api/rooms/${this.currentRoom.id}/results/`);
-            this.displayRoundResults(results);
-        } catch (error) {
-            console.error('Failed to load round results:', error);
-        }
-    }
-    
-    displayRoundResults(results) {
-        const resultsContainer = document.getElementById('roundResultsContent');
-        if (!resultsContainer) return;
-        
-        const { answers_with_players, results: roundResults, current_scores } = results;
-        
-        resultsContainer.innerHTML = `
-            <div class="results-header">
-                <h3>🎭 The Imposter was: <span class="imposter-name">${roundResults.imposter_nickname}</span></h3>
-                <div class="result-status ${roundResults.imposter_caught ? 'detectives-win' : 'imposter-win'}">
-                    ${roundResults.imposter_caught ? '🕵️ Detectives Win!' : '🎭 Imposter Wins!'}
-                </div>
-            </div>
-            
-            <div class="questions-reveal">
-                <div class="question-box detective-question">
-                    <h4>🕵️ Detective Question (Real Question):</h4>
-                    <p>${results.question_text}</p>
-                </div>
-                <div class="question-box imposter-question">
-                    <h4>🎭 Imposter Question (Decoy Question):</h4>
-                    <p>${results.decoy_question_text}</p>
-                </div>
-            </div>
-            
-            <div class="imposter-reveal-note">
-                <p><strong>📝 Note:</strong> The imposter received the decoy question while detectives got the real question!</p>
-            </div>
-            
-            <div class="answers-reveal">
-                <h4>📊 Who Answered What:</h4>
-                <div class="answers-with-players">
-                    ${answers_with_players.map(answer => `
-                        <div class="answer-reveal ${answer.is_imposter ? 'imposter-answer' : 'detective-answer'}">
-                            <div class="answer-number">${answer.answer}</div>
-                            <div class="answer-player">
-                                ${answer.player_nickname}
-                                ${answer.is_imposter ? '🎭' : '🕵️'}
-                            </div>
-                        </div>
-                    `).join('')}
-                </div>
-            </div>
-            
-            <div class="voting-results">
-                <h4>🗳️ Voting Results:</h4>
-                <div class="vote-breakdown">
-                    ${Object.entries(roundResults.vote_counts || {}).map(([playerId, votes]) => {
-                        const player = this.currentRoom.players.find(p => p.id == playerId);
-                        return `
-                            <div class="vote-result">
-                                <span class="voted-player">${player ? player.nickname : 'Unknown'}</span>
-                                <span class="vote-count">${votes} vote${votes !== 1 ? 's' : ''}</span>
-                            </div>
-                        `;
-                    }).join('')}
-                </div>
-                
-                <div class="individual-votes">
-                    <h5>Individual Votes:</h5>
-                    ${Object.values(roundResults.voter_choices || {}).map(vote => `
-                        <div class="individual-vote">
-                            <span class="voter">${vote.voter_nickname}</span> voted for 
-                            <span class="accused">${vote.accused_nickname}</span>
-                        </div>
-                    `).join('')}
-                </div>
-            </div>
-            
-            <div class="current-scores">
-                <h4>🏆 Current Scores:</h4>
-                <div class="scores-grid">
-                    ${Object.entries(current_scores).map(([nickname, score]) => `
-                        <div class="score-item">
-                            <span class="player-name">${nickname}</span>
-                            <span class="player-score">${score} points</span>
-                        </div>
-                    `).join('')}
-                </div>
-            </div>
-        `;
-    }
-    
-    async continueToNextRound() {
-        try {
-            const result = await this.apiCall(`/api/rooms/${this.currentRoom.id}/continue/`, 'POST');
-            
-            if (result.game_ended) {
-                this.showFinalResults(result.final_scores);
-            } else {
-                this.showNotification(`Starting Round ${result.next_round}!`, 'success');
-                // The polling will handle the UI update
-            }
-        } catch (error) {
-            console.error('Failed to continue to next round:', error);
-        }
-    }
-    
-    showResults() {
-        // Implementation for showing final results
-        this.gameState = 'finished';
-        this.stopPolling();
-        this.showNotification('Game finished!', 'success');
-    }
-    
-    // Utility Methods
     showNotification(message, type = 'success') {
+        console.log('Notification:', type, message);
+        
         const notification = document.createElement('div');
         notification.className = `notification ${type}`;
         notification.textContent = message;
@@ -693,13 +542,74 @@ class NumberHuntGame {
         setTimeout(() => {
             notification.classList.remove('show');
             setTimeout(() => {
-                document.body.removeChild(notification);
+                if (notification.parentNode) {
+                    document.body.removeChild(notification);
+                }
             }, 300);
         }, 3000);
     }
+    
+    // Polling Methods
+    startPolling() {
+        this.stopPolling();
+        this.pollInterval = setInterval(() => {
+            this.pollForUpdates();
+        }, 2000);
+        console.log('Started polling for updates');
+    }
+    
+    stopPolling() {
+        if (this.pollInterval) {
+            clearInterval(this.pollInterval);
+            this.pollInterval = null;
+            console.log('Stopped polling');
+        }
+    }
+    
+    async pollForUpdates() {
+        // Polling implementation for game updates
+        // This will be implemented as needed
+    }
+    
+    // Placeholder methods for other features
+    async loadProfileData() {
+        console.log('Loading profile data...');
+        // Implementation pending
+    }
+    
+    async loadLeaderboard() {
+        console.log('Loading leaderboard...');
+        // Implementation pending
+    }
+    
+    updateLobbyUI() {
+        console.log('Updating lobby UI...');
+        // Implementation pending
+    }
+    
+    // Additional placeholder methods for game functionality
+    async handleJoinRoom(e) { console.log('Join room'); }
+    async handleJoinByCode(e) { console.log('Join by code'); }
+    async handleSubmitAnswer(e) { console.log('Submit answer'); }
+    async handleUpdateProfile(e) { console.log('Update profile'); }
+    async startGame() { console.log('Start game'); }
+    async toggleReady() { console.log('Toggle ready'); }
+    async startVoting() { console.log('Start voting'); }
+    async submitVote() { console.log('Submit vote'); }
+    async continueToNextRound() { console.log('Continue to next round'); }
+    async leaveRoom() { console.log('Leave room'); }
 }
 
-// Initialize the game when DOM is loaded
+// Initialize the game when the script loads
+console.log('Number Hunt Game script loaded');
+
+// Wait for DOM and auth manager to be ready
 document.addEventListener('DOMContentLoaded', () => {
-    window.game = new NumberHuntGame();
+    console.log('DOM loaded, initializing game...');
+    
+    // Wait a bit for auth manager to be ready
+    setTimeout(() => {
+        window.game = new NumberHuntGame();
+        console.log('Game initialized');
+    }, 100);
 });

@@ -1,20 +1,36 @@
-from django.urls import path
+# game/urls.py - Enhanced with User System URLs
+
+from django.urls import path, include
 from . import views
 
 app_name = 'game'
 
 urlpatterns = [
-    # User management
-    path('api/create-user/', views.create_user, name='create_user'),
+    # Authentication endpoints
+    path('api/auth/register/', views.register_user, name='register'),
+    path('api/auth/login/', views.login_user, name='login'),
+    path('api/auth/logout/', views.logout_user, name='logout'),
     
-    # Room management
+    # User profile endpoints
+    path('api/profile/', views.user_profile, name='user_profile'),
+    path('api/profile/statistics/', views.user_statistics, name='user_statistics'),
+    path('api/profile/history/', views.user_game_history, name='user_game_history'),
+    
+    # Leaderboard endpoints
+    path('api/leaderboard/', views.leaderboard, name='leaderboard'),
+    
+    # Enhanced room management
     path('api/rooms/', views.list_rooms, name='list_rooms'),
     path('api/rooms/create/', views.create_room, name='create_room'),
+    path('api/rooms/join-by-code/', views.join_room_by_code, name='join_room_by_code'),
     path('api/rooms/<uuid:room_id>/', views.get_room, name='get_room'),
     path('api/rooms/<uuid:room_id>/join/', views.join_room, name='join_room'),
+    path('api/rooms/<uuid:room_id>/leave/', views.leave_room, name='leave_room'),
+    path('api/rooms/<uuid:room_id>/settings/', views.update_room_settings, name='update_room_settings'),
+    path('api/rooms/<uuid:room_id>/toggle-ready/', views.toggle_ready, name='toggle_ready'),
     path('api/rooms/<uuid:room_id>/start/', views.start_game, name='start_game'),
     
-    # Game flow
+    # Game flow endpoints (enhanced with authentication)
     path('api/rooms/<uuid:room_id>/current-round/', views.get_current_round, name='get_current_round'),
     path('api/rooms/<uuid:room_id>/submit-answer/', views.submit_answer, name='submit_answer'),
     path('api/rooms/<uuid:room_id>/start-voting/', views.start_voting, name='start_voting'),

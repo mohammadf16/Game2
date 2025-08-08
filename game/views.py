@@ -1,95 +1,340 @@
+# game/views.py - Enhanced with User System and Authentication
+
 from django.shortcuts import render, get_object_or_404
 from django.contrib.auth.models import User
-from django.contrib.auth import authenticate, login
+from django.contrib.auth import authenticate, login, logout
 from django.utils import timezone
+from django.db.models import Q, Count, Avg, F, Case, When
+from django.db import transaction
 from rest_framework import status, viewsets, permissions
 from rest_framework.decorators import api_view, permission_classes, action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
-from django.db import transaction
+from rest_framework.authtoken.models import Token
+from rest_framework.pagination import PageNumberPagination
+from datetime import timedelta
 import random
 
 from .models import (
     Question, DecoyQuestion, GameRoom, Player, 
-    GameRound, PlayerAnswer, Vote, GameEvent
+    GameRound, PlayerAnswer, Vote, GameEvent,
+    UserProfile, GameHistory, Achievement, UserAchievement
 )
 from .serializers import (
     GameRoomSerializer, GameRoomCreateSerializer, PlayerSerializer,
     GameRoundSerializer, JoinRoomSerializer, SubmitAnswerSerializer,
-    SubmitVoteSerializer, QuestionSerializer, GameEventSerializer
+    SubmitVoteSerializer, QuestionSerializer, GameEventSerializer,
+    UserRegistrationSerializer, UserLoginSerializer, UserProfileSerializer,
+    GameHistorySerializer, AchievementSerializer, UserAchievementSerializer,
+    JoinByCodeSerializer, LeaderboardSerializer, UserStatsSerializer,
+    RoomSettingsUpdateSerializer
 )
+
+
+class StandardResultsSetPagination(PageNumberPagination):
+    page_size = 20
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
+
+# Authentication Views
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def register_user(request):
+    """Register a new user with profile creation"""
+    serializer = UserRegistrationSerializer(data=request.data)
+    if serializer.is_valid():
+        user = serializer.save()
+        token, created = Token.objects.get_or_create(user=user)
+        
+        return Response({
+            'success': True,
+            'user': {
+                'id': user.id,
+                'username': user.username,
+                'email': user.email,
+                'first_name': user.first_name,
+                'last_name': user.last_name,
+            },
+            'token': token.key,
+            'profile': UserProfileSerializer(user.profile).data
+        }, status=status.HTTP_201_CREATED)
+    
+    return Response({
+        'success': False,
+        'errors': serializer.errors
+    }, status=status.HTTP_400_BAD_REQUEST)
 
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
-def create_user(request):
-    """Create a new user for the game"""
-    username = request.data.get('username')
-    if not username:
-        return Response({'error': 'Username is required'}, status=status.HTTP_400_BAD_REQUEST)
-    
-    # Create user if doesn't exist
-    user, created = User.objects.get_or_create(
-        username=username,
-        defaults={'first_name': username}
-    )
-    
-    # Auto login
-    login(request, user)
+def login_user(request):
+    """Authenticate user and return token"""
+    serializer = UserLoginSerializer(data=request.data)
+    if serializer.is_valid():
+        user = serializer.validated_data['user']
+        token, created = Token.objects.get_or_create(user=user)
+        
+        # Update last active
+        user.profile.last_active = timezone.now()
+        user.profile.save()
+        
+        return Response({
+            'success': True,
+            'user': {
+                'id': user.id,
+                'username': user.username,
+                'email': user.email,
+                'first_name': user.first_name,
+                'last_name': user.last_name,
+            },
+            'token': token.key,
+            'profile': UserProfileSerializer(user.profile).data
+        })
     
     return Response({
-        'user_id': user.id,
-        'username': user.username,
-        'created': created
+        'success': False,
+        'errors': serializer.errors
+    }, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def logout_user(request):
+    """Logout user and delete token"""
+    try:
+        request.user.auth_token.delete()
+        return Response({'success': True, 'message': 'Successfully logged out'})
+    except:
+        return Response({'success': False, 'message': 'Error during logout'}, 
+                       status=status.HTTP_400_BAD_REQUEST)
+
+
+# Profile Views
+@api_view(['GET', 'PUT'])
+@permission_classes([IsAuthenticated])
+def user_profile(request):
+    """Get or update user profile"""
+    profile = request.user.profile
+    
+    if request.method == 'GET':
+        return Response(UserProfileSerializer(profile).data)
+    
+    elif request.method == 'PUT':
+        serializer = UserProfileSerializer(profile, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def user_statistics(request):
+    """Get comprehensive user statistics"""
+    profile = request.user.profile
+    
+    # Recent games
+    recent_games = GameHistory.objects.filter(player=profile).order_by('-played_at')[:10]
+    
+    # Achievements
+    achievements = UserAchievement.objects.filter(user=profile).select_related('achievement')
+    
+    # Calculate additional stats
+    now = timezone.now()
+    week_ago = now - timedelta(days=7)
+    month_ago = now - timedelta(days=30)
+    
+    games_this_week = recent_games.filter(played_at__gte=week_ago).count()
+    games_this_month = recent_games.filter(played_at__gte=month_ago).count()
+    
+    # Favorite role and category
+    history = GameHistory.objects.filter(player=profile)
+    role_counts = history.values('role').annotate(count=Count('role'))
+    favorite_role = max(role_counts, key=lambda x: x['count'])['role'] if role_counts else 'detective'
+    
+    # Recent performance trend
+    recent_performance = []
+    for game in recent_games[:5]:
+        recent_performance.append({
+            'game_date': game.played_at.strftime('%Y-%m-%d'),
+            'won': game.won,
+            'role': game.role,
+            'points': game.points_earned
+        })
+    
+    # Win rate trend
+    recent_wins = sum(1 for game in recent_games[:10] if game.won)
+    win_rate_trend = "improving" if recent_wins >= 5 else "stable"
+    
+    data = {
+        'profile': UserProfileSerializer(profile).data,
+        'recent_games': GameHistorySerializer(recent_games, many=True).data,
+        'achievements': UserAchievementSerializer(achievements, many=True).data,
+        'games_this_week': games_this_week,
+        'games_this_month': games_this_month,
+        'favorite_role': favorite_role,
+        'recent_performance': recent_performance,
+        'win_rate_trend': win_rate_trend,
+    }
+    
+    return Response(data)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def user_game_history(request):
+    """Get paginated game history"""
+    profile = request.user.profile
+    history = GameHistory.objects.filter(player=profile).order_by('-played_at')
+    
+    paginator = StandardResultsSetPagination()
+    page = paginator.paginate_queryset(history, request)
+    
+    if page is not None:
+        serializer = GameHistorySerializer(page, many=True)
+        return paginator.get_paginated_response(serializer.data)
+    
+    serializer = GameHistorySerializer(history, many=True)
+    return Response(serializer.data)
+
+
+# Leaderboard Views
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def leaderboard(request):
+    """Get global leaderboard"""
+    leaderboard_type = request.query_params.get('type', 'score')  # score, wins, win_rate
+    
+    if leaderboard_type == 'score':
+        profiles = UserProfile.objects.filter(total_games__gte=5).order_by('-total_score')[:100]
+    elif leaderboard_type == 'wins':
+        profiles = UserProfile.objects.filter(total_games__gte=5).order_by('-total_wins')[:100]
+    elif leaderboard_type == 'win_rate':
+        profiles = UserProfile.objects.filter(total_games__gte=10).order_by('-win_rate')[:100]
+    else:
+        profiles = UserProfile.objects.filter(total_games__gte=5).order_by('-total_score')[:100]
+    
+    serializer = LeaderboardSerializer(profiles, many=True)
+    return Response({
+        'type': leaderboard_type,
+        'leaderboard': serializer.data
     })
 
 
+# Enhanced Room Management
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def list_rooms(request):
     """List all available game rooms"""
-    rooms = GameRoom.objects.filter(status__in=['waiting', 'in_progress']).order_by('-created_at')
+    show_private = request.query_params.get('private', 'false').lower() == 'true'
+    
+    if show_private:
+        rooms = GameRoom.objects.filter(
+            status__in=['waiting', 'in_progress']
+        ).order_by('-created_at')
+    else:
+        rooms = GameRoom.objects.filter(
+            status__in=['waiting', 'in_progress'],
+            is_private=False
+        ).order_by('-created_at')
+    
     serializer = GameRoomSerializer(rooms, many=True)
     return Response(serializer.data)
 
 
 @api_view(['POST'])
-@permission_classes([AllowAny])
+@permission_classes([IsAuthenticated])
 def create_room(request):
     """Create a new game room"""
-    # Get or create user
-    username = request.data.get('username')
-    if not username:
-        return Response({'error': 'Username is required'}, status=status.HTTP_400_BAD_REQUEST)
-    
-    user, _ = User.objects.get_or_create(
-        username=username,
-        defaults={'first_name': username}
-    )
-    
     serializer = GameRoomCreateSerializer(data=request.data)
     if serializer.is_valid():
-        room = serializer.save(host=user)
+        room = serializer.save(host=request.user)
         
         # Automatically add host as a player
         Player.objects.create(
-            user=user,
+            user=request.user,
             room=room,
-            nickname=username,  # Use username as nickname for host
-            has_submitted_answer=False,
-            has_voted=False
+            nickname=request.user.username,
+            is_host=True,
+            is_ready=True
         )
+        
+        # Update profile stats
+        request.user.profile.games_hosted += 1
+        request.user.profile.save()
         
         # Create game event
         GameEvent.objects.create(
             room=room,
-            event_type='player_joined',
-            data={'host': username, 'nickname': username}
+            event_type='room_created',
+            data={'host': request.user.username, 'room_name': room.name}
         )
         
         return Response(GameRoomSerializer(room).data, status=status.HTTP_201_CREATED)
     
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def join_room_by_code(request):
+    """Join a room using room code"""
+    serializer = JoinByCodeSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    room_code = serializer.validated_data['room_code'].upper()
+    nickname = serializer.validated_data['nickname']
+    password = serializer.validated_data.get('password', '')
+    
+    try:
+        room = GameRoom.objects.get(room_code=room_code)
+    except GameRoom.DoesNotExist:
+        return Response({'error': 'Room not found'}, status=status.HTTP_404_NOT_FOUND)
+    
+    if not room.can_join():
+        return Response({'error': 'Cannot join this room'}, status=status.HTTP_400_BAD_REQUEST)
+    
+    # Check password for private rooms
+    if room.password and room.password != password:
+        return Response({'error': 'Invalid room password'}, status=status.HTTP_403_FORBIDDEN)
+    
+    # Check if player already in room
+    existing_player = Player.objects.filter(user=request.user, room=room).first()
+    if existing_player:
+        if existing_player.can_rejoin():
+            existing_player.reconnect()
+            return Response({
+                'success': True,
+                'message': 'Rejoined room successfully',
+                'player': PlayerSerializer(existing_player).data,
+                'room': GameRoomSerializer(room).data
+            })
+        else:
+            return Response({'error': 'You are already in this room'}, status=status.HTTP_400_BAD_REQUEST)
+    
+    # Create player
+    player = Player.objects.create(
+        user=request.user,
+        room=room,
+        nickname=nickname
+    )
+    
+    # Create game event
+    GameEvent.objects.create(
+        room=room,
+        event_type='player_joined',
+        player=player,
+        data={'nickname': nickname}
+    )
+    
+    return Response({
+        'success': True,
+        'message': 'Joined room successfully',
+        'player': PlayerSerializer(player).data,
+        'room': GameRoomSerializer(room).data
+    }, status=status.HTTP_201_CREATED)
 
 
 @api_view(['GET'])
@@ -102,41 +347,43 @@ def get_room(request, room_id):
 
 
 @api_view(['POST'])
-@permission_classes([AllowAny])
+@permission_classes([IsAuthenticated])
 def join_room(request, room_id):
-    """Join a game room"""
+    """Join a specific game room"""
     room = get_object_or_404(GameRoom, id=room_id)
     
-    if room.status != 'waiting':
+    if not room.can_join():
         return Response({'error': 'Room is not accepting new players'}, status=status.HTTP_400_BAD_REQUEST)
-    
-    if room.player_count >= room.max_players:
-        return Response({'error': 'Room is full'}, status=status.HTTP_400_BAD_REQUEST)
     
     serializer = JoinRoomSerializer(data=request.data)
     if not serializer.is_valid():
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
-    username = request.data.get('username')
     nickname = serializer.validated_data['nickname']
+    password = serializer.validated_data.get('password', '')
     
-    # Get or create user
-    user, _ = User.objects.get_or_create(
-        username=username,
-        defaults={'first_name': username}
-    )
+    # Check password for private rooms
+    if room.password and room.password != password:
+        return Response({'error': 'Invalid room password'}, status=status.HTTP_403_FORBIDDEN)
     
     # Check if player already in room
-    if Player.objects.filter(user=user, room=room).exists():
-        return Response({'error': 'You are already in this room'}, status=status.HTTP_400_BAD_REQUEST)
+    existing_player = Player.objects.filter(user=request.user, room=room).first()
+    if existing_player:
+        if existing_player.can_rejoin():
+            existing_player.reconnect()
+            return Response({
+                'success': True,
+                'message': 'Rejoined room successfully',
+                'player': PlayerSerializer(existing_player).data
+            })
+        else:
+            return Response({'error': 'You are already in this room'}, status=status.HTTP_400_BAD_REQUEST)
     
     # Create player
     player = Player.objects.create(
-        user=user,
+        user=request.user,
         room=room,
-        nickname=nickname,
-        has_submitted_answer=False,
-        has_voted=False
+        nickname=nickname
     )
     
     # Create game event
@@ -151,13 +398,116 @@ def join_room(request, room_id):
 
 
 @api_view(['POST'])
-@permission_classes([AllowAny])
-def start_game(request, room_id):
-    """Start the game"""
+@permission_classes([IsAuthenticated])
+def leave_room(request, room_id):
+    """Leave a game room"""
     room = get_object_or_404(GameRoom, id=room_id)
     
+    try:
+        player = Player.objects.get(user=request.user, room=room)
+        
+        # Create game event
+        GameEvent.objects.create(
+            room=room,
+            event_type='player_left',
+            player=player,
+            data={'nickname': player.nickname}
+        )
+        
+        # If player is host, transfer to another player or delete room
+        if player.is_host and room.players.count() > 1:
+            new_host = room.players.exclude(user=request.user).first()
+            if new_host:
+                new_host.is_host = True
+                new_host.save()
+                room.host = new_host.user
+                room.save()
+        elif player.is_host:
+            # Last player leaving, delete room
+            room.delete()
+            return Response({'success': True, 'message': 'Left room and room deleted'})
+        
+        player.delete()
+        return Response({'success': True, 'message': 'Left room successfully'})
+        
+    except Player.DoesNotExist:
+        return Response({'error': 'You are not in this room'}, status=status.HTTP_404_NOT_FOUND)
+
+
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def update_room_settings(request, room_id):
+    """Update room settings (host only)"""
+    room = get_object_or_404(GameRoom, id=room_id)
+    
+    # Check if user is the host
+    if room.host != request.user:
+        return Response({'error': 'Only the host can update room settings'}, status=status.HTTP_403_FORBIDDEN)
+    
+    if room.status != 'waiting':
+        return Response({'error': 'Cannot update settings once game has started'}, status=status.HTTP_400_BAD_REQUEST)
+    
+    serializer = RoomSettingsUpdateSerializer(data=request.data)
+    if serializer.is_valid():
+        for field, value in serializer.validated_data.items():
+            setattr(room, field, value)
+        room.save()
+        
+        # Create game event
+        GameEvent.objects.create(
+            room=room,
+            event_type='settings_updated',
+            data={'updated_fields': list(serializer.validated_data.keys())}
+        )
+        
+        return Response(GameRoomSerializer(room).data)
+    
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def toggle_ready(request, room_id):
+    """Toggle player ready status"""
+    room = get_object_or_404(GameRoom, id=room_id)
+    
+    try:
+        player = Player.objects.get(user=request.user, room=room)
+        player.is_ready = not player.is_ready
+        player.save()
+        
+        return Response({
+            'success': True,
+            'is_ready': player.is_ready,
+            'message': f"You are now {'ready' if player.is_ready else 'not ready'}"
+        })
+        
+    except Player.DoesNotExist:
+        return Response({'error': 'You are not in this room'}, status=status.HTTP_404_NOT_FOUND)
+
+
+# Enhanced Game Flow (keeping existing logic but adding user tracking)
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def start_game(request, room_id):
+    """Start the game (host only)"""
+    room = get_object_or_404(GameRoom, id=room_id)
+    
+    # Check if user is the host
+    if room.host != request.user:
+        return Response({'error': 'Only the host can start the game'}, status=status.HTTP_403_FORBIDDEN)
+    
     if not room.can_start():
-        return Response({'error': 'Cannot start game. Need at least 3 players.'}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'error': 'Cannot start game. Need proper player count and ready players.'}, status=status.HTTP_400_BAD_REQUEST)
+    
+    # Check if all players are ready (optional)
+    if not room.auto_start:
+        unready_players = room.players.filter(is_connected=True, is_ready=False)
+        if unready_players.exists():
+            return Response({
+                'error': 'All players must be ready to start',
+                'unready_players': [p.nickname for p in unready_players]
+            }, status=status.HTTP_400_BAD_REQUEST)
     
     with transaction.atomic():
         room.status = 'in_progress'
@@ -179,43 +529,33 @@ def start_game(request, room_id):
 
 
 def start_round(room, round_number):
-    """Start a new round"""
-    # Get random question and decoy question
-    question = Question.objects.filter(is_active=True).order_by('?').first()
+    """Start a new round (enhanced with user preferences)"""
+    # Get questions based on room preferences
+    question_filter = {'is_active': True}
+    if room.category_preference:
+        question_filter['category'] = room.category_preference
+    
+    if room.difficulty_level != 'mixed':
+        difficulty_map = {
+            'easy': 1.5,
+            'medium': 2.5,
+            'hard': 3.5,
+            'expert': 4.5
+        }
+        target_difficulty = difficulty_map.get(room.difficulty_level, 2.5)
+        # Find questions within 0.5 of target difficulty
+        question_filter['difficulty__gte'] = target_difficulty - 0.5
+        question_filter['difficulty__lte'] = target_difficulty + 0.5
+    
+    question = Question.objects.filter(**question_filter).order_by('?').first()
     decoy_question = DecoyQuestion.objects.filter(is_active=True).order_by('?').first()
     
     if not question or not decoy_question:
         raise ValueError("No questions available")
     
-    # Select random imposter, ensuring it's not the same as the previous round
-    players = list(room.players.filter(is_connected=True))
-    
-    if round_number > 1:
-        # Get the previous round's imposter
-        try:
-            previous_round = GameRound.objects.get(room=room, round_number=round_number-1)
-            previous_imposter = previous_round.imposter
-            
-            # Create a list of players excluding the previous imposter
-            eligible_players = [player for player in players if player != previous_imposter]
-            
-            # If we have eligible players, select from them; otherwise, select from all players
-            if eligible_players:
-                imposter = random.choice(eligible_players)
-            else:
-                imposter = random.choice(players)
-        except GameRound.DoesNotExist:
-            # If previous round doesn't exist, select randomly from all players
-            imposter = random.choice(players)
-    else:
-        # For the first round, select randomly from all players
-        imposter = random.choice(players)
-    
-    # Reset player states for the new round
-    for player in players:
-        player.has_submitted_answer = False
-        player.has_voted = False
-        player.save()
+    # Select random imposter
+    connected_players = list(room.players.filter(is_connected=True))
+    imposter = random.choice(connected_players)
     
     # Create round
     game_round = GameRound.objects.create(
@@ -234,11 +574,47 @@ def start_round(room, round_number):
         data={
             'round_number': round_number,
             'question_id': question.id,
+            'question_category': question.category,
             'imposter_id': imposter.id
         }
     )
     
     return game_round
+
+
+# Keep existing game flow methods (get_current_round, submit_answer, etc.)
+# but enhance them with proper user authentication and statistics tracking
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_current_round(request, room_id):
+    """Get current round information"""
+    room = get_object_or_404(GameRoom, id=room_id)
+    
+    if room.current_round == 0:
+        return Response({'error': 'Game has not started'}, status=status.HTTP_400_BAD_REQUEST)
+    
+    # Verify user is in the room
+    try:
+        player = Player.objects.get(user=request.user, room=room)
+    except Player.DoesNotExist:
+        return Response({'error': 'You are not in this room'}, status=status.HTTP_403_FORBIDDEN)
+    
+    game_round = get_object_or_404(GameRound, room=room, round_number=room.current_round)
+    
+    # Determine if player is imposter and get appropriate question
+    is_imposter = (player == game_round.imposter)
+    player_question = game_round.decoy_question if is_imposter else game_round.question
+    
+    data = GameRoundSerializer(game_round).data
+    data['is_imposter'] = is_imposter
+    data['player_question'] = QuestionSerializer(player_question).data if player_question else None
+    data['player_info'] = PlayerSerializer(player).data
+    
+    return Response(data)
+
+
+
 
 
 @api_view(['GET'])

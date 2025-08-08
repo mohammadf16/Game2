@@ -1,0 +1,290 @@
+/* static/css/screen-management.css - Add this to fix the screen display issue */
+
+/* Screen Management Styles */
+.screen {
+    display: none; /* Hide all screens by default */
+    min-height: 100vh;
+    width: 100%;
+}
+
+.screen.active {
+    display: block; /* Show only the active screen */
+}
+
+/* Remove the .hidden class usage and use proper screen management */
+.screen:not(.active) {
+    display: none !important;
+}
+
+/* Ensure smooth transitions between screens */
+.screen.active {
+    animation: fadeIn 0.3s ease-in-out;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* Navigation Bar - Always visible */
+.navbar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    background: rgba(26, 32, 44, 0.95);
+    backdrop-filter: blur(10px);
+    z-index: 1000;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 15px 0;
+}
+
+.nav-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.nav-brand h1 {
+    font-size: 1.5rem;
+    font-weight: 800;
+    margin: 0;
+    background: linear-gradient(45deg, #667eea, #764ba2);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.nav-content {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+}
+
+.user-info, .auth-buttons {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+.user-display {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: rgba(255, 255, 255, 0.1);
+    padding: 8px 15px;
+    border-radius: 25px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.user-avatar {
+    font-size: 1.2rem;
+}
+
+.user-name {
+    font-weight: 600;
+    color: #e2e8f0;
+}
+
+.user-score {
+    font-size: 0.9rem;
+    color: #a0aec0;
+}
+
+/* Adjust all screens to account for fixed navbar */
+.screen {
+    padding-top: 80px; /* Account for fixed navbar */
+}
+
+/* Auth Screen Specific Styles */
+.auth-container {
+    max-width: 500px;
+    margin: 0 auto;
+    padding: 40px 20px;
+}
+
+.auth-header {
+    text-align: center;
+    margin-bottom: 40px;
+}
+
+.auth-header h1 {
+    font-size: 2.5rem;
+    font-weight: 800;
+    margin-bottom: 10px;
+    background: linear-gradient(45deg, #667eea, #764ba2);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.auth-tabs {
+    display: flex;
+    margin-bottom: 30px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    padding: 4px;
+}
+
+.tab-btn {
+    flex: 1;
+    padding: 12px 20px;
+    border: none;
+    background: transparent;
+    color: #a0aec0;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    font-weight: 600;
+}
+
+.tab-btn.active {
+    background: linear-gradient(135deg, var(--primary-color), var(--primary-dark));
+    color: white;
+    box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+}
+
+.tab-content {
+    display: none;
+}
+
+.tab-content.active {
+    display: block;
+    animation: fadeIn 0.3s ease-in-out;
+}
+
+.auth-form {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 15px;
+}
+
+.btn-full {
+    width: 100%;
+    padding: 15px;
+    font-size: 1.1rem;
+    margin-top: 10px;
+}
+
+.auth-footer {
+    text-align: center;
+    margin-top: 30px;
+    color: #a0aec0;
+}
+
+/* Loading States */
+.loading-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(26, 32, 44, 0.95);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+}
+
+.loading-overlay.hidden {
+    display: none;
+}
+
+.loading-content {
+    text-align: center;
+    color: white;
+}
+
+.spinner {
+    width: 40px;
+    height: 40px;
+    border: 4px solid rgba(255, 255, 255, 0.3);
+    border-top: 4px solid var(--primary-color);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin: 0 auto 20px;
+}
+
+.spinner.large {
+    width: 60px;
+    height: 60px;
+    border-width: 6px;
+}
+
+/* Error States */
+.error-message {
+    color: #f56565;
+    font-size: 0.9rem;
+    margin-top: 5px;
+    padding: 8px 12px;
+    background: rgba(245, 101, 101, 0.1);
+    border-radius: 6px;
+    border-left: 3px solid #f56565;
+}
+
+.form-input.error {
+    border-color: #f56565;
+    background: rgba(245, 101, 101, 0.05);
+}
+
+/* Utility Classes */
+.hidden {
+    display: none !important;
+}
+
+.visible {
+    display: block !important;
+}
+
+.text-center {
+    text-align: center;
+}
+
+.mb-1 { margin-bottom: 10px; }
+.mb-2 { margin-bottom: 20px; }
+.mb-3 { margin-bottom: 30px; }
+.mt-1 { margin-top: 10px; }
+.mt-2 { margin-top: 20px; }
+.mt-3 { margin-top: 30px; }
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .nav-container {
+        padding: 0 15px;
+    }
+    
+    .nav-brand h1 {
+        font-size: 1.2rem;
+    }
+    
+    .user-display {
+        padding: 6px 12px;
+        gap: 8px;
+    }
+    
+    .auth-container {
+        padding: 20px 15px;
+    }
+    
+    .auth-header h1 {
+        font-size: 2rem;
+    }
+    
+    .form-row {
+        grid-template-columns: 1fr;
+        gap: 10px;
+    }
+    
+    .container {
+        padding: 15px;
+    }
+}
