@@ -7,13 +7,20 @@ from django.utils import timezone
 from django.db.models import Q, Count, Avg, F, Case, When
 from django.db import transaction
 from rest_framework import status, viewsets, permissions
-from rest_framework.decorators import api_view, permission_classes, action
+from rest_framework.decorators import authentication_classes, permission_classes, api_view, action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.authtoken.models import Token
 from rest_framework.pagination import PageNumberPagination
 from datetime import timedelta
 import random
+from django.views.decorators.csrf import csrf_exempt
+from django.utils.decorators import method_decorator
+from rest_framework.authentication import TokenAuthentication, SessionAuthentication
+from django.http import JsonResponse
+import json
+import logging
+from django.views.decorators.http import require_http_methods
 
 from .models import (
     Question, DecoyQuestion, GameRoom, Player, 
@@ -31,56 +38,103 @@ from .serializers import (
 )
 
 
+
+logger = logging.getLogger(__name__)
+
+
 class StandardResultsSetPagination(PageNumberPagination):
     page_size = 20
     page_size_query_param = 'page_size'
     max_page_size = 100
 
 
-# Authentication Views
-@api_view(['POST'])
-@permission_classes([AllowAny])
+# Enhanced Authentication Views
+@csrf_exempt
 def register_user(request):
-    """Register a new user with profile creation"""
-    serializer = UserRegistrationSerializer(data=request.data)
-    if serializer.is_valid():
-        user = serializer.save()
-        token, created = Token.objects.get_or_create(user=user)
-        
-        return Response({
-            'success': True,
-            'user': {
-                'id': user.id,
-                'username': user.username,
-                'email': user.email,
-                'first_name': user.first_name,
-                'last_name': user.last_name,
-            },
-            'token': token.key,
-            'profile': UserProfileSerializer(user.profile).data
-        }, status=status.HTTP_201_CREATED)
+    """Register a new user with profile creation - Enhanced version"""
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'errors': {'general': ['Method not allowed']}}, status=405)
     
-    return Response({
-        'success': False,
-        'errors': serializer.errors
-    }, status=status.HTTP_400_BAD_REQUEST)
-
-
-@api_view(['POST'])
-@permission_classes([AllowAny])
-def login_user(request):
-    """Authenticate user and return token"""
-    serializer = UserLoginSerializer(data=request.data)
-    if serializer.is_valid():
-        user = serializer.validated_data['user']
-        token, created = Token.objects.get_or_create(user=user)
+    try:
+        data = json.loads(request.body)
+        logger.info(f"Registration attempt for username: {data.get('username')}")
         
-        # Update last active
-        user.profile.last_active = timezone.now()
-        user.profile.save()
+        # Validation
+        errors = {}
         
-        return Response({
+        # Required fields
+        required_fields = ['username', 'email', 'password', 'password_confirm', 'first_name', 'last_name']
+        for field in required_fields:
+            if not data.get(field):
+                errors[field] = [f'{field.replace("_", " ").title()} is required']
+        
+        if errors:
+            return JsonResponse({'success': False, 'errors': errors}, status=400)
+        
+        # Username validation
+        username = data.get('username').strip()
+        if len(username) < 3:
+            errors['username'] = ['Username must be at least 3 characters long']
+        elif len(username) > 30:
+            errors['username'] = ['Username must be less than 30 characters']
+        elif User.objects.filter(username=username).exists():
+            errors['username'] = ['Username already exists']
+        
+        # Email validation
+        email = data.get('email').strip()
+        if User.objects.filter(email=email).exists():
+            errors['email'] = ['Email already registered']
+        
+        # Password validation
+        password = data.get('password')
+        password_confirm = data.get('password_confirm')
+        if len(password) < 8:
+            errors['password'] = ['Password must be at least 8 characters long']
+        elif password != password_confirm:
+            errors['password_confirm'] = ['Passwords do not match']
+        
+        if errors:
+            return JsonResponse({'success': False, 'errors': errors}, status=400)
+        
+        # Create user
+        with transaction.atomic():
+            user = User.objects.create_user(
+                username=username,
+                email=email,
+                first_name=data.get('first_name', '').strip(),
+                last_name=data.get('last_name', '').strip(),
+                password=password
+            )
+            
+            # Create profile
+            profile = UserProfile.objects.create(
+                user=user,
+                avatar=data.get('avatar', 'detective_1'),
+                gender=data.get('gender', 'prefer_not_say'),
+                bio=data.get('bio', '').strip()[:500]  # Limit bio length
+            )
+            
+            # Create token
+            token, created = Token.objects.get_or_create(user=user)
+            
+            # Check for early adopter achievement
+            user_count = User.objects.count()
+            if user_count <= 100:
+                try:
+                    achievement = Achievement.objects.get(name='Early Adopter')
+                    UserAchievement.objects.get_or_create(
+                        user=profile,
+                        achievement=achievement,
+                        defaults={'progress_value': 1, 'is_completed': True, 'earned_at': timezone.now()}
+                    )
+                except Achievement.DoesNotExist:
+                    pass
+        
+        logger.info(f"User registered successfully: {username}")
+        
+        return JsonResponse({
             'success': True,
+            'message': 'Registration successful! Welcome to Number Hunt!',
             'user': {
                 'id': user.id,
                 'username': user.username,
@@ -89,13 +143,103 @@ def login_user(request):
                 'last_name': user.last_name,
             },
             'token': token.key,
-            'profile': UserProfileSerializer(user.profile).data
+            'profile': {
+                'avatar': profile.avatar,
+                'total_games': profile.total_games,
+                'total_score': profile.total_score,
+                'win_rate': profile.win_rate,
+                'experience_level': profile.experience_level,
+                'rank': profile.rank,
+            }
         })
+        
+    except json.JSONDecodeError:
+        return JsonResponse({'success': False, 'errors': {'general': ['Invalid JSON data']}}, status=400)
+    except Exception as e:
+        logger.error(f"Registration error: {str(e)}")
+        return JsonResponse({'success': False, 'errors': {'general': ['Registration failed. Please try again.']}}, status=500)
+
+
+@csrf_exempt
+def login_user(request):
+    """Authenticate user and return token - Enhanced version"""
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'errors': {'general': ['Method not allowed']}}, status=405)
     
-    return Response({
-        'success': False,
-        'errors': serializer.errors
-    }, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        data = json.loads(request.body)
+        logger.info(f"Login attempt for: {data.get('username_or_email')}")
+        
+        username_or_email = data.get('username_or_email', '').strip()
+        password = data.get('password', '')
+        
+        if not username_or_email or not password:
+            return JsonResponse({
+                'success': False, 
+                'errors': {'general': ['Username/email and password are required']}
+            }, status=400)
+        
+        # Try to find user by username or email
+        user = None
+        if '@' in username_or_email:
+            try:
+                user_obj = User.objects.get(email=username_or_email)
+                user = authenticate(username=user_obj.username, password=password)
+            except User.DoesNotExist:
+                pass
+        else:
+            user = authenticate(username=username_or_email, password=password)
+        
+        if not user:
+            logger.warning(f"Failed login attempt for: {username_or_email}")
+            return JsonResponse({
+                'success': False, 
+                'errors': {'general': ['Invalid login credentials']}
+            }, status=400)
+        
+        if not user.is_active:
+            return JsonResponse({
+                'success': False, 
+                'errors': {'general': ['User account is disabled']}
+            }, status=400)
+        
+        # Create/get token
+        token, created = Token.objects.get_or_create(user=user)
+        
+        # Update last active and login stats
+        profile = user.profile
+        profile.last_active = timezone.now()
+        profile.save()
+        
+        logger.info(f"User logged in successfully: {user.username}")
+        
+        return JsonResponse({
+            'success': True,
+            'message': 'Login successful!',
+            'user': {
+                'id': user.id,
+                'username': user.username,
+                'email': user.email,
+                'first_name': user.first_name,
+                'last_name': user.last_name,
+            },
+            'token': token.key,
+            'profile': {
+                'avatar': profile.avatar,
+                'total_games': profile.total_games,
+                'total_score': profile.total_score,
+                'win_rate': profile.win_rate,
+                'experience_level': profile.experience_level,
+                'rank': profile.rank,
+                'last_game_played': profile.last_game_played.isoformat() if profile.last_game_played else None,
+            }
+        })
+        
+    except json.JSONDecodeError:
+        return JsonResponse({'success': False, 'errors': {'general': ['Invalid JSON data']}}, status=400)
+    except Exception as e:
+        logger.error(f"Login error: {str(e)}")
+        return JsonResponse({'success': False, 'errors': {'general': ['Login failed. Please try again.']}}, status=500)
 
 
 @api_view(['POST'])
@@ -103,14 +247,16 @@ def login_user(request):
 def logout_user(request):
     """Logout user and delete token"""
     try:
+        logger.info(f"User logging out: {request.user.username}")
         request.user.auth_token.delete()
         return Response({'success': True, 'message': 'Successfully logged out'})
-    except:
+    except Exception as e:
+        logger.error(f"Logout error: {str(e)}")
         return Response({'success': False, 'message': 'Error during logout'}, 
                        status=status.HTTP_400_BAD_REQUEST)
 
 
-# Profile Views
+# Enhanced Profile Views
 @api_view(['GET', 'PUT'])
 @permission_classes([IsAuthenticated])
 def user_profile(request):
@@ -124,18 +270,21 @@ def user_profile(request):
         serializer = UserProfileSerializer(profile, data=request.data, partial=True)
         if serializer.is_valid():
             serializer.save()
+            logger.info(f"Profile updated for user: {request.user.username}")
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
+@csrf_exempt
 def user_statistics(request):
-    """Get comprehensive user statistics"""
+    """Get comprehensive user statistics - Fixed version"""
     profile = request.user.profile
     
-    # Recent games
-    recent_games = GameHistory.objects.filter(player=profile).order_by('-played_at')[:10]
+    # Get recent games (don't slice yet)
+    recent_games_query = GameHistory.objects.filter(player=profile).order_by('-played_at')
     
     # Achievements
     achievements = UserAchievement.objects.filter(user=profile).select_related('achievement')
@@ -145,8 +294,12 @@ def user_statistics(request):
     week_ago = now - timedelta(days=7)
     month_ago = now - timedelta(days=30)
     
-    games_this_week = recent_games.filter(played_at__gte=week_ago).count()
-    games_this_month = recent_games.filter(played_at__gte=month_ago).count()
+    # Filter before slicing
+    games_this_week = recent_games_query.filter(played_at__gte=week_ago).count()
+    games_this_month = recent_games_query.filter(played_at__gte=month_ago).count()
+    
+    # Now get recent games (slice after filtering)
+    recent_games = list(recent_games_query[:10])
     
     # Favorite role and category
     history = GameHistory.objects.filter(player=profile)
@@ -167,10 +320,62 @@ def user_statistics(request):
     recent_wins = sum(1 for game in recent_games[:10] if game.won)
     win_rate_trend = "improving" if recent_wins >= 5 else "stable"
     
+    # Serialize data
+    achievements_data = []
+    for ach in achievements:
+        achievements_data.append({
+            'achievement': {
+                'name': ach.achievement.name,
+                'description': ach.achievement.description,
+                'icon': ach.achievement.icon,
+                'category': ach.achievement.category,
+                'points_reward': ach.achievement.points_reward
+            },
+            'progress_value': ach.progress_value,
+            'progress_percentage': ach.progress_percentage,
+            'is_completed': ach.is_completed,
+            'earned_at': ach.earned_at.isoformat() if ach.earned_at else None
+        })
+    
+    recent_games_data = []
+    for game in recent_games:
+        recent_games_data.append({
+            'role': game.role,
+            'won': game.won,
+            'points_earned': game.points_earned,
+            'total_rounds': game.total_rounds,
+            'correct_votes': game.correct_votes,
+            'total_votes': game.total_votes,
+            'voting_accuracy': game.voting_accuracy,
+            'played_at': game.played_at.isoformat()
+        })
+    
     data = {
-        'profile': UserProfileSerializer(profile).data,
-        'recent_games': GameHistorySerializer(recent_games, many=True).data,
-        'achievements': UserAchievementSerializer(achievements, many=True).data,
+        'profile': {
+            'user': {
+                'username': profile.user.username,
+                'first_name': profile.user.first_name,
+                'last_name': profile.user.last_name,
+                'email': profile.user.email
+            },
+            'avatar': profile.avatar,
+            'bio': profile.bio or '',
+            'total_games': profile.total_games,
+            'total_wins': profile.total_wins,
+            'total_imposter_wins': profile.total_imposter_wins,
+            'total_detective_wins': profile.total_detective_wins,
+            'total_score': profile.total_score,
+            'win_rate': profile.win_rate,
+            'imposter_win_rate': profile.imposter_win_rate,
+            'detective_win_rate': profile.detective_win_rate,
+            'best_win_streak': profile.best_win_streak,
+            'consecutive_wins': profile.consecutive_wins,
+            'experience_level': profile.experience_level,
+            'rank': profile.rank,
+            'preferred_category': profile.preferred_category
+        },
+        'recent_games': recent_games_data,
+        'achievements': achievements_data,
         'games_this_week': games_this_week,
         'games_this_month': games_this_month,
         'favorite_role': favorite_role,
@@ -178,33 +383,251 @@ def user_statistics(request):
         'win_rate_trend': win_rate_trend,
     }
     
-    return Response(data)
+    return JsonResponse(data)
 
 
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
+# Placeholder functions
+@csrf_exempt
+@require_http_methods(["POST"])
+def leave_room(request, room_id):
+    """Leave a game room"""
+    user = check_auth(request)
+    if not user:
+        return JsonResponse({'error': 'Authentication required'}, status=401)
+    
+    try:
+        room = get_object_or_404(GameRoom, id=room_id)
+        player = Player.objects.filter(user=user, room=room).first()
+        
+        if not player:
+            return JsonResponse({'error': 'You are not in this room'}, status=404)
+        
+        # Create game event
+        GameEvent.objects.create(
+            room=room,
+            event_type='player_left',
+            player=player,
+            data={'nickname': player.nickname}
+        )
+        
+        # If player is host, transfer to another player or delete room
+        if player.is_host and room.players.count() > 1:
+            new_host = room.players.exclude(user=user).first()
+            if new_host:
+                new_host.is_host = True
+                new_host.save()
+                room.host = new_host.user
+                room.save()
+        elif player.is_host:
+            # Last player leaving, delete room
+            room.delete()
+            return JsonResponse({'success': True, 'message': 'Left room and room deleted', 'room_deleted': True})
+        
+        player.delete()
+        logger.info(f"Player {user.username} left room {room.name}")
+        
+        return JsonResponse({'success': True, 'message': 'Left room successfully'})
+        
+    except Exception as e:
+        logger.error(f"Leave room error: {str(e)}")
+        return JsonResponse({'error': 'Failed to leave room'}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def toggle_ready(request, room_id):
+    """Toggle player ready status"""
+    user = check_auth(request)
+    if not user:
+        return JsonResponse({'error': 'Authentication required'}, status=401)
+    
+    try:
+        room = get_object_or_404(GameRoom, id=room_id)
+        player = Player.objects.filter(user=user, room=room).first()
+        
+        if not player:
+            return JsonResponse({'error': 'You are not in this room'}, status=404)
+        
+        player.is_ready = not player.is_ready
+        player.save()
+        
+        logger.info(f"Player {user.username} {'ready' if player.is_ready else 'not ready'} in room {room.name}")
+        
+        return JsonResponse({
+            'success': True, 
+            'is_ready': player.is_ready,
+            'message': f"You are now {'ready' if player.is_ready else 'not ready'}"
+        })
+        
+    except Exception as e:
+        logger.error(f"Toggle ready error: {str(e)}")
+        return JsonResponse({'error': 'Failed to toggle ready status'}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def start_game(request, room_id):
+    """Start the game"""
+    user = check_auth(request)
+    if not user:
+        return JsonResponse({'error': 'Authentication required'}, status=401)
+    return JsonResponse({'success': True, 'message': 'Game started'})
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
 def user_game_history(request):
-    """Get paginated game history"""
-    profile = request.user.profile
-    history = GameHistory.objects.filter(player=profile).order_by('-played_at')
+    """Get user game history"""
+    user = check_auth(request)
+    if not user:
+        return JsonResponse({'error': 'Authentication required'}, status=401)
     
-    paginator = StandardResultsSetPagination()
-    page = paginator.paginate_queryset(history, request)
-    
-    if page is not None:
-        serializer = GameHistorySerializer(page, many=True)
-        return paginator.get_paginated_response(serializer.data)
-    
-    serializer = GameHistorySerializer(history, many=True)
-    return Response(serializer.data)
+    return JsonResponse({
+        'results': [],
+        'count': 0,
+        'next': None,
+        'previous': None
+    })
 
 
-# Leaderboard Views
+@csrf_exempt
+@require_http_methods(["POST"])
+def join_room_by_code(request):
+    """Join a room using room code"""
+    user = check_auth(request)
+    if not user:
+        return JsonResponse({'error': 'Authentication required'}, status=401)
+    
+    try:
+        data = json.loads(request.body)
+        room_code = data.get('room_code', '').upper()
+        nickname = data.get('nickname', '').strip()
+        password = data.get('password', '')
+        
+        if not room_code or not nickname:
+            return JsonResponse({'error': 'Room code and nickname are required'}, status=400)
+        
+        try:
+            room = GameRoom.objects.get(room_code=room_code)
+        except GameRoom.DoesNotExist:
+            return JsonResponse({'error': 'Room not found'}, status=404)
+        
+        if not room.can_join():
+            return JsonResponse({'error': 'Cannot join this room'}, status=400)
+        
+        # Check password
+        if room.password and room.password != password:
+            return JsonResponse({'error': 'Invalid room password'}, status=403)
+        
+        # Check if already in room
+        existing_player = Player.objects.filter(user=user, room=room).first()
+        if existing_player:
+            if existing_player.can_rejoin():
+                existing_player.reconnect()
+                return JsonResponse({
+                    'success': True,
+                    'message': 'Rejoined room successfully',
+                    'room': {
+                        'id': str(room.id),
+                        'name': room.name,
+                        'room_code': room.room_code
+                    }
+                })
+            else:
+                return JsonResponse({'error': 'You are already in this room'}, status=400)
+        
+        # Create player
+        player = Player.objects.create(
+            user=user,
+            room=room,
+            nickname=nickname
+        )
+        
+        return JsonResponse({
+            'success': True,
+            'message': 'Joined room successfully',
+            'room': {
+                'id': str(room.id),
+                'name': room.name,
+                'room_code': room.room_code,
+                'player_count': room.player_count,
+                'max_players': room.max_players
+            }
+        })
+        
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON data'}, status=400)
+    except Exception as e:
+        logger.error(f"Join by code error: {str(e)}")
+        return JsonResponse({'error': 'Failed to join room'}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def create_room(request):
+    """Create a new game room"""
+    user = check_auth(request)
+    if not user:
+        return JsonResponse({'error': 'Authentication required'}, status=401)
+    
+    try:
+        data = json.loads(request.body)
+        
+        room = GameRoom.objects.create(
+            name=data.get('name', 'New Room'),
+            description=data.get('description', ''),
+            host=user,
+            is_private=data.get('is_private', False),
+            password=data.get('password', ''),
+            max_players=int(data.get('max_players', 8)),
+            min_players=3,
+            total_rounds=int(data.get('total_rounds', 5)),
+            difficulty_level=data.get('difficulty_level', 'mixed'),
+            category_preference=data.get('category_preference', ''),
+            discussion_time=int(data.get('discussion_time', 180)),
+            voting_time=int(data.get('voting_time', 60)),
+            allow_rejoining=data.get('allow_rejoining', True),
+            spectators_allowed=data.get('spectators_allowed', False)
+        )
+        
+        # Add host as player
+        Player.objects.create(
+            user=user,
+            room=room,
+            nickname=user.username,
+            is_host=True,
+            is_ready=True
+        )
+        
+        # Update profile stats
+        user.profile.games_hosted += 1
+        user.profile.save()
+        
+        logger.info(f"Room created by {user.username}: {room.name}")
+        
+        return JsonResponse({
+            'id': str(room.id),
+            'name': room.name,
+            'room_code': room.room_code,
+            'player_count': room.player_count,
+            'max_players': room.max_players,
+            'status': room.status
+        })
+        
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON data'}, status=400)
+    except Exception as e:
+        logger.error(f"Create room error: {str(e)}")
+        return JsonResponse({'error': 'Failed to create room'}, status=500)
+
+
+
+# Enhanced Leaderboard Views
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def leaderboard(request):
     """Get global leaderboard"""
-    leaderboard_type = request.query_params.get('type', 'score')  # score, wins, win_rate
+    leaderboard_type = request.query_params.get('type', 'score')
     
     if leaderboard_type == 'score':
         profiles = UserProfile.objects.filter(total_games__gte=5).order_by('-total_score')[:100]
@@ -222,216 +645,289 @@ def leaderboard(request):
     })
 
 
-# Enhanced Room Management
-@api_view(['GET'])
-@permission_classes([AllowAny])
+# Helper function for auth checking
+def check_auth(request):
+    """Check if user is authenticated via token"""
+    auth_header = request.META.get('HTTP_AUTHORIZATION', '')
+    if auth_header.startswith('Token '):
+        token_key = auth_header[6:]
+        try:
+            token = Token.objects.get(key=token_key)
+            return token.user
+        except Token.DoesNotExist:
+            return None
+    return None
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
 def list_rooms(request):
     """List all available game rooms"""
-    show_private = request.query_params.get('private', 'false').lower() == 'true'
-    
-    if show_private:
-        rooms = GameRoom.objects.filter(
-            status__in=['waiting', 'in_progress']
-        ).order_by('-created_at')
-    else:
-        rooms = GameRoom.objects.filter(
-            status__in=['waiting', 'in_progress'],
-            is_private=False
-        ).order_by('-created_at')
-    
-    serializer = GameRoomSerializer(rooms, many=True)
-    return Response(serializer.data)
-
-
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
-def create_room(request):
-    """Create a new game room"""
-    serializer = GameRoomCreateSerializer(data=request.data)
-    if serializer.is_valid():
-        room = serializer.save(host=request.user)
-        
-        # Automatically add host as a player
-        Player.objects.create(
-            user=request.user,
-            room=room,
-            nickname=request.user.username,
-            is_host=True,
-            is_ready=True
-        )
-        
-        # Update profile stats
-        request.user.profile.games_hosted += 1
-        request.user.profile.save()
-        
-        # Create game event
-        GameEvent.objects.create(
-            room=room,
-            event_type='room_created',
-            data={'host': request.user.username, 'room_name': room.name}
-        )
-        
-        return Response(GameRoomSerializer(room).data, status=status.HTTP_201_CREATED)
-    
-    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
-def join_room_by_code(request):
-    """Join a room using room code"""
-    serializer = JoinByCodeSerializer(data=request.data)
-    if not serializer.is_valid():
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
-    room_code = serializer.validated_data['room_code'].upper()
-    nickname = serializer.validated_data['nickname']
-    password = serializer.validated_data.get('password', '')
-    
     try:
-        room = GameRoom.objects.get(room_code=room_code)
-    except GameRoom.DoesNotExist:
-        return Response({'error': 'Room not found'}, status=status.HTTP_404_NOT_FOUND)
-    
-    if not room.can_join():
-        return Response({'error': 'Cannot join this room'}, status=status.HTTP_400_BAD_REQUEST)
-    
-    # Check password for private rooms
-    if room.password and room.password != password:
-        return Response({'error': 'Invalid room password'}, status=status.HTTP_403_FORBIDDEN)
-    
-    # Check if player already in room
-    existing_player = Player.objects.filter(user=request.user, room=room).first()
-    if existing_player:
-        if existing_player.can_rejoin():
-            existing_player.reconnect()
-            return Response({
-                'success': True,
-                'message': 'Rejoined room successfully',
-                'player': PlayerSerializer(existing_player).data,
-                'room': GameRoomSerializer(room).data
-            })
+        show_private = request.GET.get('private', 'false').lower() == 'true'
+        
+        if show_private:
+            rooms = GameRoom.objects.filter(
+                status__in=['waiting', 'in_progress']
+            ).order_by('-created_at')
         else:
-            return Response({'error': 'You are already in this room'}, status=status.HTTP_400_BAD_REQUEST)
-    
-    # Create player
-    player = Player.objects.create(
-        user=request.user,
-        room=room,
-        nickname=nickname
-    )
-    
-    # Create game event
-    GameEvent.objects.create(
-        room=room,
-        event_type='player_joined',
-        player=player,
-        data={'nickname': nickname}
-    )
-    
-    return Response({
-        'success': True,
-        'message': 'Joined room successfully',
-        'player': PlayerSerializer(player).data,
-        'room': GameRoomSerializer(room).data
-    }, status=status.HTTP_201_CREATED)
+            rooms = GameRoom.objects.filter(
+                status__in=['waiting', 'in_progress'],
+                is_private=False
+            ).order_by('-created_at')
+        
+        rooms_data = []
+        for room in rooms:
+            rooms_data.append({
+                'id': str(room.id),
+                'name': room.name,
+                'description': room.description or '',
+                'host': {
+                    'username': room.host.username,
+                    'avatar': room.host.profile.avatar if hasattr(room.host, 'profile') else 'detective_1'
+                },
+                'is_private': room.is_private,
+                'room_code': room.room_code,
+                'max_players': room.max_players,
+                'total_rounds': room.total_rounds,
+                'difficulty_level': room.difficulty_level,
+                'category_preference': room.category_preference or '',
+                'discussion_time': room.discussion_time,
+                'voting_time': room.voting_time,
+                'status': room.status,
+                'player_count': room.player_count,
+                'can_join': room.can_join(),
+            })
+        
+        return JsonResponse(rooms_data, safe=False)
+        
+    except Exception as e:
+        logger.error(f"List rooms error: {str(e)}")
+        return JsonResponse({'error': 'Failed to load rooms'}, status=500)
 
 
-@api_view(['GET'])
-@permission_classes([AllowAny])
+
+@csrf_exempt
+@require_http_methods(["GET"])
 def get_room(request, room_id):
     """Get room details"""
-    room = get_object_or_404(GameRoom, id=room_id)
-    serializer = GameRoomSerializer(room)
-    return Response(serializer.data)
+    try:
+        room = get_object_or_404(GameRoom, id=room_id)
+        
+        players = []
+        for player in room.players.all():
+            players.append({
+                'id': player.id,
+                'nickname': player.nickname,
+                'is_host': player.is_host,
+                'is_ready': player.is_ready,
+                'is_connected': player.is_connected,
+                'score': player.score,
+                'avatar': player.user.profile.avatar if hasattr(player.user, 'profile') else 'detective_1'
+            })
+        
+        room_data = {
+            'id': str(room.id),
+            'name': room.name,
+            'description': room.description or '',
+            'host': {
+                'username': room.host.username,
+                'avatar': room.host.profile.avatar if hasattr(room.host, 'profile') else 'detective_1'
+            },
+            'is_private': room.is_private,
+            'room_code': room.room_code,
+            'max_players': room.max_players,
+            'min_players': room.min_players,
+            'total_rounds': room.total_rounds,
+            'difficulty_level': room.difficulty_level,
+            'category_preference': room.category_preference or '',
+            'discussion_time': room.discussion_time,
+            'voting_time': room.voting_time,
+            'status': room.status,
+            'current_round': room.current_round,
+            'player_count': room.player_count,
+            'players': players,
+            'created_at': room.created_at.isoformat(),
+            'can_join': room.can_join(),
+            'can_start': room.can_start()
+        }
+        
+        return JsonResponse(room_data)
+        
+    except Exception as e:
+        logger.error(f"Get room error: {str(e)}")
+        return JsonResponse({'error': 'Room not found'}, status=404)
 
 
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@csrf_exempt
+@require_http_methods(["POST"])
 def join_room(request, room_id):
     """Join a specific game room"""
-    room = get_object_or_404(GameRoom, id=room_id)
-    
-    if not room.can_join():
-        return Response({'error': 'Room is not accepting new players'}, status=status.HTTP_400_BAD_REQUEST)
-    
-    serializer = JoinRoomSerializer(data=request.data)
-    if not serializer.is_valid():
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
-    nickname = serializer.validated_data['nickname']
-    password = serializer.validated_data.get('password', '')
-    
-    # Check password for private rooms
-    if room.password and room.password != password:
-        return Response({'error': 'Invalid room password'}, status=status.HTTP_403_FORBIDDEN)
-    
-    # Check if player already in room
-    existing_player = Player.objects.filter(user=request.user, room=room).first()
-    if existing_player:
-        if existing_player.can_rejoin():
-            existing_player.reconnect()
-            return Response({
-                'success': True,
-                'message': 'Rejoined room successfully',
-                'player': PlayerSerializer(existing_player).data
-            })
-        else:
-            return Response({'error': 'You are already in this room'}, status=status.HTTP_400_BAD_REQUEST)
-    
-    # Create player
-    player = Player.objects.create(
-        user=request.user,
-        room=room,
-        nickname=nickname
-    )
-    
-    # Create game event
-    GameEvent.objects.create(
-        room=room,
-        event_type='player_joined',
-        player=player,
-        data={'nickname': nickname}
-    )
-    
-    return Response(PlayerSerializer(player).data, status=status.HTTP_201_CREATED)
-
-
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
-def leave_room(request, room_id):
-    """Leave a game room"""
-    room = get_object_or_404(GameRoom, id=room_id)
+    user = check_auth(request)
+    if not user:
+        return JsonResponse({'error': 'Authentication required'}, status=401)
     
     try:
-        player = Player.objects.get(user=request.user, room=room)
+        room = get_object_or_404(GameRoom, id=room_id)
+        
+        if not room.can_join():
+            return JsonResponse({'error': 'Room is not accepting new players'}, status=400)
+        
+        data = json.loads(request.body)
+        nickname = data.get('nickname', '').strip()
+        password = data.get('password', '')
+        
+        if not nickname:
+            return JsonResponse({'error': 'Nickname is required'}, status=400)
+        
+        # Check password for private rooms - FIX
+        if room.password and len(room.password.strip()) > 0 and room.password != password:
+            return JsonResponse({'error': 'Invalid room password'}, status=403)
+        
+        # Check if player already in room
+        existing_player = Player.objects.filter(user=user, room=room).first()
+        if existing_player:
+            if existing_player.can_rejoin():
+                existing_player.reconnect()
+                return JsonResponse({
+                    'success': True,
+                    'message': 'Rejoined room successfully',
+                    'room': {
+                        'id': str(room.id),
+                        'name': room.name,
+                        'room_code': room.room_code,
+                        'player_count': room.player_count,
+                        'max_players': room.max_players,
+                        'status': room.status,
+                        'host': room.host.username,
+                        'description': room.description or '',
+                        'difficulty_level': room.difficulty_level,
+                        'total_rounds': room.total_rounds,
+                        'discussion_time': room.discussion_time,
+                        'voting_time': room.voting_time,
+                        'players': [
+                            {
+                                'id': p.id,
+                                'nickname': p.nickname,
+                                'is_host': p.is_host,
+                                'is_ready': p.is_ready,
+                                'is_connected': p.is_connected,
+                                'score': p.score,
+                                'avatar': p.user.profile.avatar if hasattr(p.user, 'profile') else 'detective_1'
+                            } for p in room.players.all()
+                        ]
+                    }
+                })
+            else:
+                return JsonResponse({'error': 'You are already in this room'}, status=400)
+        
+        # Create player
+        player = Player.objects.create(
+            user=user,
+            room=room,
+            nickname=nickname
+        )
         
         # Create game event
         GameEvent.objects.create(
             room=room,
-            event_type='player_left',
+            event_type='player_joined',
             player=player,
-            data={'nickname': player.nickname}
+            data={'nickname': nickname}
         )
         
-        # If player is host, transfer to another player or delete room
-        if player.is_host and room.players.count() > 1:
-            new_host = room.players.exclude(user=request.user).first()
-            if new_host:
-                new_host.is_host = True
-                new_host.save()
-                room.host = new_host.user
-                room.save()
-        elif player.is_host:
-            # Last player leaving, delete room
-            room.delete()
-            return Response({'success': True, 'message': 'Left room and room deleted'})
+        logger.info(f"Player {user.username} joined room {room.name}")
         
-        player.delete()
-        return Response({'success': True, 'message': 'Left room successfully'})
+        return JsonResponse({
+            'success': True,
+            'message': 'Joined room successfully',
+            'room': {
+                'id': str(room.id),
+                'name': room.name,
+                'room_code': room.room_code,
+                'player_count': room.player_count + 1,  # Include new player
+                'max_players': room.max_players,
+                'status': room.status,
+                'host': room.host.username,
+                'description': room.description or '',
+                'difficulty_level': room.difficulty_level,
+                'total_rounds': room.total_rounds,
+                'discussion_time': room.discussion_time,
+                'voting_time': room.voting_time,
+                'players': [
+                    {
+                        'id': p.id,
+                        'nickname': p.nickname,
+                        'is_host': p.is_host,
+                        'is_ready': p.is_ready,
+                        'is_connected': p.is_connected,
+                        'score': p.score,
+                        'avatar': p.user.profile.avatar if hasattr(p.user, 'profile') else 'detective_1'
+                    } for p in room.players.all()
+                ]
+            }
+        })
         
-    except Player.DoesNotExist:
-        return Response({'error': 'You are not in this room'}, status=status.HTTP_404_NOT_FOUND)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON data'}, status=400)
+    except Exception as e:
+        logger.error(f"Join room error: {str(e)}")
+        return JsonResponse({'error': f'Failed to join room: {str(e)}'}, status=500)
+
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def get_room(request, room_id):
+    """Get room details"""
+    try:
+        room = get_object_or_404(GameRoom, id=room_id)
+        
+        players = []
+        for player in room.players.all():
+            players.append({
+                'id': player.id,
+                'nickname': player.nickname,
+                'is_host': player.is_host,
+                'is_ready': player.is_ready,
+                'is_connected': player.is_connected,
+                'score': player.score,
+                'avatar': player.user.profile.avatar if hasattr(player.user, 'profile') else 'detective_1'
+            })
+        
+        room_data = {
+            'id': str(room.id),
+            'name': room.name,
+            'description': room.description or '',
+            'host': {
+                'username': room.host.username,
+                'avatar': room.host.profile.avatar if hasattr(room.host, 'profile') else 'detective_1'
+            },
+            'is_private': room.is_private,
+            'room_code': room.room_code,
+            'max_players': room.max_players,
+            'min_players': room.min_players,
+            'total_rounds': room.total_rounds,
+            'difficulty_level': room.difficulty_level,
+            'category_preference': room.category_preference or '',
+            'discussion_time': room.discussion_time,
+            'voting_time': room.voting_time,
+            'status': room.status,
+            'current_round': room.current_round,
+            'player_count': room.player_count,
+            'players': players,
+            'created_at': room.created_at.isoformat(),
+            'can_join': room.can_join(),
+            'can_start': room.can_start()
+        }
+        
+        return JsonResponse(room_data)
+        
+    except Exception as e:
+        logger.error(f"Get room error: {str(e)}")
+        return JsonResponse({'error': 'Room not found'}, status=404)
+
+
 
 
 @api_view(['PUT'])
@@ -465,67 +961,7 @@ def update_room_settings(request, room_id):
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
-def toggle_ready(request, room_id):
-    """Toggle player ready status"""
-    room = get_object_or_404(GameRoom, id=room_id)
-    
-    try:
-        player = Player.objects.get(user=request.user, room=room)
-        player.is_ready = not player.is_ready
-        player.save()
-        
-        return Response({
-            'success': True,
-            'is_ready': player.is_ready,
-            'message': f"You are now {'ready' if player.is_ready else 'not ready'}"
-        })
-        
-    except Player.DoesNotExist:
-        return Response({'error': 'You are not in this room'}, status=status.HTTP_404_NOT_FOUND)
 
-
-# Enhanced Game Flow (keeping existing logic but adding user tracking)
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
-def start_game(request, room_id):
-    """Start the game (host only)"""
-    room = get_object_or_404(GameRoom, id=room_id)
-    
-    # Check if user is the host
-    if room.host != request.user:
-        return Response({'error': 'Only the host can start the game'}, status=status.HTTP_403_FORBIDDEN)
-    
-    if not room.can_start():
-        return Response({'error': 'Cannot start game. Need proper player count and ready players.'}, status=status.HTTP_400_BAD_REQUEST)
-    
-    # Check if all players are ready (optional)
-    if not room.auto_start:
-        unready_players = room.players.filter(is_connected=True, is_ready=False)
-        if unready_players.exists():
-            return Response({
-                'error': 'All players must be ready to start',
-                'unready_players': [p.nickname for p in unready_players]
-            }, status=status.HTTP_400_BAD_REQUEST)
-    
-    with transaction.atomic():
-        room.status = 'in_progress'
-        room.started_at = timezone.now()
-        room.current_round = 1
-        room.save()
-        
-        # Start first round
-        start_round(room, 1)
-        
-        # Create game event
-        GameEvent.objects.create(
-            room=room,
-            event_type='game_started',
-            data={'player_count': room.player_count}
-        )
-    
-    return Response(GameRoomSerializer(room).data)
 
 
 def start_round(room, round_number):

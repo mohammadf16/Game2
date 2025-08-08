@@ -1,32 +1,24 @@
-/* static/css/screen-management.css - Add this to fix the screen display issue */
+/* static/css/auth.css - Fixed version */
 
-/* Screen Management Styles */
+/* Screen Management - Fix the core issue */
 .screen {
-    display: none; /* Hide all screens by default */
+    display: none;
     min-height: 100vh;
     width: 100%;
+    padding-top: 80px;
 }
 
 .screen.active {
-    display: block; /* Show only the active screen */
-}
-
-/* Remove the .hidden class usage and use proper screen management */
-.screen:not(.active) {
-    display: none !important;
-}
-
-/* Ensure smooth transitions between screens */
-.screen.active {
+    display: block !important;
     animation: fadeIn 0.3s ease-in-out;
 }
 
-@keyframes fadeIn {
-    from { opacity: 0; transform: translateY(10px); }
-    to { opacity: 1; transform: translateY(0); }
+/* Remove any conflicting hidden classes */
+.hidden {
+    display: none !important;
 }
 
-/* Navigation Bar - Always visible */
+/* Navigation Bar */
 .navbar {
     position: fixed;
     top: 0;
@@ -80,26 +72,7 @@
     border: 1px solid rgba(255, 255, 255, 0.2);
 }
 
-.user-avatar {
-    font-size: 1.2rem;
-}
-
-.user-name {
-    font-weight: 600;
-    color: #e2e8f0;
-}
-
-.user-score {
-    font-size: 0.9rem;
-    color: #a0aec0;
-}
-
-/* Adjust all screens to account for fixed navbar */
-.screen {
-    padding-top: 80px; /* Account for fixed navbar */
-}
-
-/* Auth Screen Specific Styles */
+/* Auth Screen */
 .auth-container {
     max-width: 500px;
     margin: 0 auto;
@@ -121,6 +94,7 @@
     background-clip: text;
 }
 
+/* Fix Tab System */
 .auth-tabs {
     display: flex;
     margin-bottom: 30px;
@@ -142,20 +116,22 @@
 }
 
 .tab-btn.active {
-    background: linear-gradient(135deg, var(--primary-color), var(--primary-dark));
+    background: linear-gradient(135deg, #667eea, #5a67d8);
     color: white;
     box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
 }
 
+/* Fix Tab Content */
 .tab-content {
     display: none;
 }
 
 .tab-content.active {
-    display: block;
+    display: block !important;
     animation: fadeIn 0.3s ease-in-out;
 }
 
+/* Form Styles */
 .auth-form {
     display: flex;
     flex-direction: column;
@@ -168,6 +144,78 @@
     gap: 15px;
 }
 
+.form-group {
+    margin-bottom: 20px;
+}
+
+.form-label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 500;
+    color: #e2e8f0;
+}
+
+.form-input {
+    width: 100%;
+    padding: 12px 16px;
+    border: 2px solid rgba(255, 255, 255, 0.2);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+    font-size: 1rem;
+    transition: all 0.3s ease;
+    box-sizing: border-box;
+}
+
+.form-input:focus {
+    outline: none;
+    border-color: #4facfe;
+    background: rgba(255, 255, 255, 0.15);
+    box-shadow: 0 0 0 3px rgba(79, 172, 254, 0.2);
+}
+
+.form-input::placeholder {
+    color: rgba(255, 255, 255, 0.6);
+}
+
+.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 12px 24px;
+    border: none;
+    border-radius: 12px;
+    font-size: 1rem;
+    font-weight: 600;
+    text-decoration: none;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    min-width: 120px;
+    text-align: center;
+}
+
+.btn-primary {
+    background: linear-gradient(135deg, #667eea, #5a67d8);
+    color: white;
+    box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+}
+
+.btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+}
+
+.btn-secondary {
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.btn-secondary:hover {
+    background: rgba(255, 255, 255, 0.3);
+    transform: translateY(-2px);
+}
+
 .btn-full {
     width: 100%;
     padding: 15px;
@@ -175,13 +223,7 @@
     margin-top: 10px;
 }
 
-.auth-footer {
-    text-align: center;
-    margin-top: 30px;
-    color: #a0aec0;
-}
-
-/* Loading States */
+/* Loading and Error States */
 .loading-overlay {
     position: fixed;
     top: 0;
@@ -189,38 +231,30 @@
     right: 0;
     bottom: 0;
     background: rgba(26, 32, 44, 0.95);
-    display: flex;
+    display: none;
     align-items: center;
     justify-content: center;
     z-index: 9999;
 }
 
-.loading-overlay.hidden {
-    display: none;
-}
-
-.loading-content {
-    text-align: center;
-    color: white;
+.loading-overlay.show {
+    display: flex;
 }
 
 .spinner {
     width: 40px;
     height: 40px;
     border: 4px solid rgba(255, 255, 255, 0.3);
-    border-top: 4px solid var(--primary-color);
+    border-top: 4px solid #667eea;
     border-radius: 50%;
     animation: spin 1s linear infinite;
-    margin: 0 auto 20px;
 }
 
-.spinner.large {
-    width: 60px;
-    height: 60px;
-    border-width: 6px;
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
 }
 
-/* Error States */
 .error-message {
     color: #f56565;
     font-size: 0.9rem;
@@ -232,43 +266,26 @@
 }
 
 .form-input.error {
-    border-color: #f56565;
+    border-color: #f56565 !important;
     background: rgba(245, 101, 101, 0.05);
 }
 
-/* Utility Classes */
-.hidden {
-    display: none !important;
+/* Animations */
+@keyframes fadeIn {
+    from { 
+        opacity: 0; 
+        transform: translateY(10px); 
+    }
+    to { 
+        opacity: 1; 
+        transform: translateY(0); 
+    }
 }
-
-.visible {
-    display: block !important;
-}
-
-.text-center {
-    text-align: center;
-}
-
-.mb-1 { margin-bottom: 10px; }
-.mb-2 { margin-bottom: 20px; }
-.mb-3 { margin-bottom: 30px; }
-.mt-1 { margin-top: 10px; }
-.mt-2 { margin-top: 20px; }
-.mt-3 { margin-top: 30px; }
 
 /* Responsive Design */
 @media (max-width: 768px) {
-    .nav-container {
-        padding: 0 15px;
-    }
-    
-    .nav-brand h1 {
-        font-size: 1.2rem;
-    }
-    
-    .user-display {
-        padding: 6px 12px;
-        gap: 8px;
+    .form-row {
+        grid-template-columns: 1fr;
     }
     
     .auth-container {
@@ -277,14 +294,5 @@
     
     .auth-header h1 {
         font-size: 2rem;
-    }
-    
-    .form-row {
-        grid-template-columns: 1fr;
-        gap: 10px;
-    }
-    
-    .container {
-        padding: 15px;
     }
 }

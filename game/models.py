@@ -1,3 +1,4 @@
+# game/models.py - Fixed UserProfile model
 
 from django.utils import timezone
 from django.db import models
@@ -151,7 +152,7 @@ class GameRoom(models.Model):
             # Imposter won
             return [last_round.imposter]
 
-# Enhanced Player model
+
 class Player(models.Model):
     """Player in a game room - Enhanced version"""
     
@@ -292,11 +293,8 @@ class GameEvent(models.Model):
     def __str__(self):
         return f"{self.event_type} in {self.room.name}"
 
-# game/models.py - Enhanced with User System and Statistics
 
-
-
-# User Profile and Statistics
+# User Profile and Statistics - FIXED VERSION
 class UserProfile(models.Model):
     """Extended user profile with game statistics and preferences"""
     
@@ -325,20 +323,23 @@ class UserProfile(models.Model):
         ('prefer_not_say', 'Prefer not to say'),
     ]
     
+    EXPERIENCE_CHOICES = [
+        ('Rookie', 'Rookie'),
+        ('Novice', 'Novice'),
+        ('Experienced', 'Experienced'),
+        ('Expert', 'Expert'),
+        ('Master', 'Master'),
+    ]
+    
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
     avatar = models.CharField(max_length=20, choices=AVATAR_CHOICES, default='detective_1')
     gender = models.CharField(max_length=15, choices=GENDER_CHOICES, default='prefer_not_say')
     bio = models.TextField(max_length=500, blank=True, null=True)
     
+    # Store experience level as a field, not property
     experience_level = models.CharField(
         max_length=20,
-        choices=[
-            ('Rookie', 'Rookie'),
-            ('Novice', 'Novice'),
-            ('Experienced', 'Experienced'),
-            ('Expert', 'Expert'),
-            ('Master', 'Master'),
-        ],
+        choices=EXPERIENCE_CHOICES,
         default='Rookie'
     )
 
@@ -378,6 +379,7 @@ class UserProfile(models.Model):
         return f"{self.user.username}'s Profile"
     
     def save(self, *args, **kwargs):
+        # Update experience level based on total games
         if self.total_games < 5:
             self.experience_level = 'Rookie'
         elif self.total_games < 25:
@@ -440,25 +442,6 @@ class UserProfile(models.Model):
     def rank(self):
         """Calculate player's global rank based on total score"""
         return UserProfile.objects.filter(total_score__gt=self.total_score).count() + 1
-    
-    @property
-    def experience_level(self):
-        """Calculate experience level based on total games"""
-        if self.total_games < 5:
-            return "Rookie"
-        elif self.total_games < 25:
-            return "Novice"
-        elif self.total_games < 100:
-            return "Experienced"
-        elif self.total_games < 500:
-            return "Expert"
-        else:
-            return "Master"
-
-
-# Enhanced GameRoom with more features
-
-
 
 
 class GameHistory(models.Model):
@@ -499,8 +482,6 @@ class GameHistory(models.Model):
     def voting_accuracy(self):
         """Calculate voting accuracy percentage"""
         return (self.correct_votes / self.total_votes) * 100 if self.total_votes > 0 else 0
-
-
 
 
 # Achievement System
@@ -583,7 +564,3 @@ class UserAchievement(models.Model):
             self.save()
             return True
         return False
-
-
-# Keep existing models (Question, DecoyQuestion, GameRound, PlayerAnswer, Vote, GameEvent)
-# These remain the same as in your original implementation
