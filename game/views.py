@@ -464,15 +464,63 @@ def toggle_ready(request, room_id):
         return JsonResponse({'error': 'Failed to toggle ready status'}, status=500)
 
 
-@csrf_exempt
-@require_http_methods(["POST"])
-def start_game(request, room_id):
-    """Start the game"""
-    user = check_auth(request)
-    if not user:
-        return JsonResponse({'error': 'Authentication required'}, status=401)
-    return JsonResponse({'success': True, 'message': 'Game started'})
 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def start_game(request, room_id):
+    """Start the game (host only)"""
+    room = get_object_or_404(GameRoom, id=room_id)
+    
+    # Check if user is the host
+    if room.host != request.user:
+        return Response({'error': 'Only the host can start the game'}, status=status.HTTP_403_FORBIDDEN)
+    
+    if not room.can_start():
+        # Provide detailed error message
+        connected_players = room.players.filter(is_connected=True)
+        ready_players = connected_players.filter(is_ready=True)
+        
+        if connected_players.count() < room.min_players:
+            return Response({
+                'error': f'Need at least {room.min_players} players to start. Currently have {connected_players.count()}'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        if ready_players.count() != connected_players.count():
+            unready_players = connected_players.filter(is_ready=False)
+            return Response({
+                'error': 'All players must be ready to start',
+                'unready_players': [p.nickname for p in unready_players]
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        return Response({'error': 'Cannot start game'}, status=status.HTTP_400_BAD_REQUEST)
+    
+    with transaction.atomic():
+        room.status = 'in_progress'
+        room.started_at = timezone.now()
+        room.current_round = 1
+        room.save()
+        
+        # Start first round
+        try:
+            start_round(room, 1)
+        except ValueError as e:
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+        # Create game event
+        GameEvent.objects.create(
+            room=room,
+            event_type='game_started',
+            data={
+                'player_count': room.player_count,
+                'started_by': request.user.username
+            }
+        )
+    
+    return Response({
+        'success': True,
+        'message': 'Game started successfully!',
+        'room': GameRoomSerializer(room).data
+    })
 
 @csrf_exempt
 @require_http_methods(["GET"])
@@ -490,77 +538,65 @@ def user_game_history(request):
     })
 
 
-@csrf_exempt
-@require_http_methods(["POST"])
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
 def join_room_by_code(request):
     """Join a room using room code"""
-    user = check_auth(request)
-    if not user:
-        return JsonResponse({'error': 'Authentication required'}, status=401)
+    serializer = JoinByCodeSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    room_code = serializer.validated_data['room_code'].upper()
+    nickname = serializer.validated_data['nickname']
+    password = serializer.validated_data.get('password', '')
     
     try:
-        data = json.loads(request.body)
-        room_code = data.get('room_code', '').upper()
-        nickname = data.get('nickname', '').strip()
-        password = data.get('password', '')
-        
-        if not room_code or not nickname:
-            return JsonResponse({'error': 'Room code and nickname are required'}, status=400)
-        
-        try:
-            room = GameRoom.objects.get(room_code=room_code)
-        except GameRoom.DoesNotExist:
-            return JsonResponse({'error': 'Room not found'}, status=404)
-        
-        if not room.can_join():
-            return JsonResponse({'error': 'Cannot join this room'}, status=400)
-        
-        # Check password
-        if room.password and room.password != password:
-            return JsonResponse({'error': 'Invalid room password'}, status=403)
-        
-        # Check if already in room
-        existing_player = Player.objects.filter(user=user, room=room).first()
-        if existing_player:
-            if existing_player.can_rejoin():
-                existing_player.reconnect()
-                return JsonResponse({
-                    'success': True,
-                    'message': 'Rejoined room successfully',
-                    'room': {
-                        'id': str(room.id),
-                        'name': room.name,
-                        'room_code': room.room_code
-                    }
-                })
-            else:
-                return JsonResponse({'error': 'You are already in this room'}, status=400)
-        
-        # Create player
-        player = Player.objects.create(
-            user=user,
-            room=room,
-            nickname=nickname
-        )
-        
-        return JsonResponse({
-            'success': True,
-            'message': 'Joined room successfully',
-            'room': {
-                'id': str(room.id),
-                'name': room.name,
-                'room_code': room.room_code,
-                'player_count': room.player_count,
-                'max_players': room.max_players
-            }
-        })
-        
-    except json.JSONDecodeError:
-        return JsonResponse({'error': 'Invalid JSON data'}, status=400)
-    except Exception as e:
-        logger.error(f"Join by code error: {str(e)}")
-        return JsonResponse({'error': 'Failed to join room'}, status=500)
-
+        room = GameRoom.objects.get(room_code=room_code)
+    except GameRoom.DoesNotExist:
+        return Response({'error': 'Room not found'}, status=status.HTTP_404_NOT_FOUND)
+    
+    if not room.can_join():
+        return Response({'error': 'Cannot join this room'}, status=status.HTTP_400_BAD_REQUEST)
+    
+    # Check password ONLY for private rooms with password
+    if room.is_private and room.password and room.password != password:
+        return Response({'error': 'Invalid room password'}, status=status.HTTP_403_FORBIDDEN)
+    
+    # Check if player already in room
+    existing_player = Player.objects.filter(user=request.user, room=room).first()
+    if existing_player:
+        if existing_player.can_rejoin():
+            existing_player.reconnect()
+            return Response({
+                'success': True,
+                'message': 'Rejoined room successfully',
+                'player': PlayerSerializer(existing_player).data,
+                'room': GameRoomSerializer(room).data
+            })
+        else:
+            return Response({'error': 'You are already in this room'}, status=status.HTTP_400_BAD_REQUEST)
+    
+    # Create player
+    player = Player.objects.create(
+        user=request.user,
+        room=room,
+        nickname=nickname
+    )
+    
+    # Create game event
+    GameEvent.objects.create(
+        room=room,
+        event_type='player_joined',
+        player=player,
+        data={'nickname': nickname}
+    )
+    
+    return Response({
+        'success': True,
+        'message': 'Joined room successfully',
+        'player': PlayerSerializer(player).data,
+        'room': GameRoomSerializer(room).data
+    }, status=status.HTTP_201_CREATED)
 
 @csrf_exempt
 @require_http_methods(["POST"])
@@ -697,6 +733,7 @@ def list_rooms(request):
                 'status': room.status,
                 'player_count': room.player_count,
                 'can_join': room.can_join(),
+                'has_password': bool(room.password),
             })
         
         return JsonResponse(rooms_data, safe=False)
@@ -723,7 +760,13 @@ def get_room(request, room_id):
                 'is_ready': player.is_ready,
                 'is_connected': player.is_connected,
                 'score': player.score,
-                'avatar': player.user.profile.avatar if hasattr(player.user, 'profile') else 'detective_1'
+                'user': {
+                    'id': player.user.id,
+                    'username': player.user.username,
+                    'profile': {
+                        'avatar': player.user.profile.avatar if hasattr(player.user, 'profile') else 'detective_1'
+                    }
+                }
             })
         
         room_data = {
@@ -731,6 +774,7 @@ def get_room(request, room_id):
             'name': room.name,
             'description': room.description or '',
             'host': {
+                'id': room.host.id,
                 'username': room.host.username,
                 'avatar': room.host.profile.avatar if hasattr(room.host, 'profile') else 'detective_1'
             },
@@ -749,7 +793,8 @@ def get_room(request, room_id):
             'players': players,
             'created_at': room.created_at.isoformat(),
             'can_join': room.can_join(),
-            'can_start': room.can_start()
+            'can_start': room.can_start(),
+            'has_password': bool(room.password),
         }
         
         return JsonResponse(room_data)
@@ -759,121 +804,55 @@ def get_room(request, room_id):
         return JsonResponse({'error': 'Room not found'}, status=404)
 
 
-@csrf_exempt
-@require_http_methods(["POST"])
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
 def join_room(request, room_id):
     """Join a specific game room"""
-    user = check_auth(request)
-    if not user:
-        return JsonResponse({'error': 'Authentication required'}, status=401)
+    room = get_object_or_404(GameRoom, id=room_id)
     
-    try:
-        room = get_object_or_404(GameRoom, id=room_id)
-        
-        if not room.can_join():
-            return JsonResponse({'error': 'Room is not accepting new players'}, status=400)
-        
-        data = json.loads(request.body)
-        nickname = data.get('nickname', '').strip()
-        password = data.get('password', '')
-        
-        if not nickname:
-            return JsonResponse({'error': 'Nickname is required'}, status=400)
-        
-        # Check password for private rooms - FIX
-        if room.password and len(room.password.strip()) > 0 and room.password != password:
-            return JsonResponse({'error': 'Invalid room password'}, status=403)
-        
-        # Check if player already in room
-        existing_player = Player.objects.filter(user=user, room=room).first()
-        if existing_player:
-            if existing_player.can_rejoin():
-                existing_player.reconnect()
-                return JsonResponse({
-                    'success': True,
-                    'message': 'Rejoined room successfully',
-                    'room': {
-                        'id': str(room.id),
-                        'name': room.name,
-                        'room_code': room.room_code,
-                        'player_count': room.player_count,
-                        'max_players': room.max_players,
-                        'status': room.status,
-                        'host': room.host.username,
-                        'description': room.description or '',
-                        'difficulty_level': room.difficulty_level,
-                        'total_rounds': room.total_rounds,
-                        'discussion_time': room.discussion_time,
-                        'voting_time': room.voting_time,
-                        'players': [
-                            {
-                                'id': p.id,
-                                'nickname': p.nickname,
-                                'is_host': p.is_host,
-                                'is_ready': p.is_ready,
-                                'is_connected': p.is_connected,
-                                'score': p.score,
-                                'avatar': p.user.profile.avatar if hasattr(p.user, 'profile') else 'detective_1'
-                            } for p in room.players.all()
-                        ]
-                    }
-                })
-            else:
-                return JsonResponse({'error': 'You are already in this room'}, status=400)
-        
-        # Create player
-        player = Player.objects.create(
-            user=user,
-            room=room,
-            nickname=nickname
-        )
-        
-        # Create game event
-        GameEvent.objects.create(
-            room=room,
-            event_type='player_joined',
-            player=player,
-            data={'nickname': nickname}
-        )
-        
-        logger.info(f"Player {user.username} joined room {room.name}")
-        
-        return JsonResponse({
-            'success': True,
-            'message': 'Joined room successfully',
-            'room': {
-                'id': str(room.id),
-                'name': room.name,
-                'room_code': room.room_code,
-                'player_count': room.player_count + 1,  # Include new player
-                'max_players': room.max_players,
-                'status': room.status,
-                'host': room.host.username,
-                'description': room.description or '',
-                'difficulty_level': room.difficulty_level,
-                'total_rounds': room.total_rounds,
-                'discussion_time': room.discussion_time,
-                'voting_time': room.voting_time,
-                'players': [
-                    {
-                        'id': p.id,
-                        'nickname': p.nickname,
-                        'is_host': p.is_host,
-                        'is_ready': p.is_ready,
-                        'is_connected': p.is_connected,
-                        'score': p.score,
-                        'avatar': p.user.profile.avatar if hasattr(p.user, 'profile') else 'detective_1'
-                    } for p in room.players.all()
-                ]
-            }
-        })
-        
-    except json.JSONDecodeError:
-        return JsonResponse({'error': 'Invalid JSON data'}, status=400)
-    except Exception as e:
-        logger.error(f"Join room error: {str(e)}")
-        return JsonResponse({'error': f'Failed to join room: {str(e)}'}, status=500)
-
+    if not room.can_join():
+        return Response({'error': 'Room is not accepting new players'}, status=status.HTTP_400_BAD_REQUEST)
+    
+    serializer = JoinRoomSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    nickname = serializer.validated_data['nickname']
+    password = serializer.validated_data.get('password', '')
+    
+    # Check password ONLY for private rooms with password
+    if room.is_private and room.password and room.password != password:
+        return Response({'error': 'Invalid room password'}, status=status.HTTP_403_FORBIDDEN)
+    
+    # Check if player already in room
+    existing_player = Player.objects.filter(user=request.user, room=room).first()
+    if existing_player:
+        if existing_player.can_rejoin():
+            existing_player.reconnect()
+            return Response({
+                'success': True,
+                'message': 'Rejoined room successfully',
+                'player': PlayerSerializer(existing_player).data
+            })
+        else:
+            return Response({'error': 'You are already in this room'}, status=status.HTTP_400_BAD_REQUEST)
+    
+    # Create player
+    player = Player.objects.create(
+        user=request.user,
+        room=room,
+        nickname=nickname
+    )
+    
+    # Create game event
+    GameEvent.objects.create(
+        room=room,
+        event_type='player_joined',
+        player=player,
+        data={'nickname': nickname}
+    )
+    
+    return Response(PlayerSerializer(player).data, status=status.HTTP_201_CREATED)
 
 
 @csrf_exempt
@@ -1054,105 +1033,36 @@ def get_current_round(request, room_id):
 
 
 @api_view(['GET'])
-@permission_classes([AllowAny])
+@permission_classes([IsAuthenticated])
 def get_current_round(request, room_id):
-    """Get current round information"""
+    """Get current round information for the authenticated player"""
     room = get_object_or_404(GameRoom, id=room_id)
     
     if room.current_round == 0:
         return Response({'error': 'Game has not started'}, status=status.HTTP_400_BAD_REQUEST)
     
+    # Ensure the requesting user is a player in the room
+    try:
+        player = Player.objects.get(user=request.user, room=room)
+    except Player.DoesNotExist:
+        return Response({'error': 'You are not in this room'}, status=status.HTTP_403_FORBIDDEN)
+    
     game_round = get_object_or_404(GameRound, room=room, round_number=room.current_round)
     
-    # Get player info to determine if they're the imposter
-    username = request.query_params.get('username')
-    is_imposter = False
-    player_question = None
-    
-    if username:
-        try:
-            user = User.objects.get(username=username)
-            player = Player.objects.get(user=user, room=room)
-            is_imposter = (player == game_round.imposter)
-            player_question = game_round.decoy_question if is_imposter else game_round.question
-        except (User.DoesNotExist, Player.DoesNotExist):
-            pass
+    # Determine if player is imposter and get appropriate question
+    is_imposter = (player == game_round.imposter)
+    player_question = game_round.decoy_question if is_imposter else game_round.question
     
     data = GameRoundSerializer(game_round).data
     data['is_imposter'] = is_imposter
     data['player_question'] = QuestionSerializer(player_question).data if player_question else None
+    data['player_info'] = PlayerSerializer(player).data
     
     return Response(data)
 
 
 @api_view(['POST'])
-@permission_classes([AllowAny])
-def submit_answer(request, room_id):
-    """Submit answer for current round"""
-    room = get_object_or_404(GameRoom, id=room_id)
-    game_round = get_object_or_404(GameRound, room=room, round_number=room.current_round)
-    
-    if game_round.status != 'answering':
-        return Response({'error': 'Not in answering phase'}, status=status.HTTP_400_BAD_REQUEST)
-    
-    username = request.data.get('username')
-    if not username:
-        return Response({'error': 'Username is required'}, status=status.HTTP_400_BAD_REQUEST)
-    
-    try:
-        user = User.objects.get(username=username)
-        player = Player.objects.get(user=user, room=room)
-    except (User.DoesNotExist, Player.DoesNotExist):
-        return Response({'error': 'Player not found'}, status=status.HTTP_404_NOT_FOUND)
-    
-    serializer = SubmitAnswerSerializer(data=request.data)
-    if not serializer.is_valid():
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
-    # Create or update answer
-    answer, created = PlayerAnswer.objects.update_or_create(
-        round=game_round,
-        player=player,
-        defaults={'answer': serializer.validated_data['answer']}
-    )
-    
-    # Mark player as having submitted answer
-    player.has_submitted_answer = True
-    player.save()
-    
-    # Create game event
-    GameEvent.objects.create(
-        room=room,
-        event_type='answer_submitted',
-        player=player,
-        data={'answer': answer.answer}
-    )
-    
-    # Check if all players have answered
-    total_players = room.players.filter(is_connected=True).count()
-    answered_players = game_round.answers.count()
-    
-    if answered_players >= total_players:
-        # Move to discussion phase
-        game_round.status = 'discussion'
-        game_round.discussion_started_at = timezone.now()
-        game_round.save()
-        
-        GameEvent.objects.create(
-            room=room,
-            event_type='discussion_started',
-            data={
-                'total_answers': answered_players,
-                'question_text': game_round.question.text,
-                'decoy_question_text': game_round.decoy_question.text
-            }
-        )
-    
-    return Response({'success': True, 'answer_id': answer.id})
-
-
-@api_view(['POST'])
-@permission_classes([AllowAny])
+@permission_classes([IsAuthenticated])
 def start_voting(request, room_id):
     """Start voting phase"""
     room = get_object_or_404(GameRoom, id=room_id)
@@ -1175,7 +1085,7 @@ def start_voting(request, room_id):
 
 
 @api_view(['POST'])
-@permission_classes([AllowAny])
+@permission_classes([IsAuthenticated])
 def submit_vote(request, room_id):
     """Submit vote for who is the imposter"""
     try:
@@ -1185,14 +1095,10 @@ def submit_vote(request, room_id):
         if game_round.status != 'voting':
             return Response({'error': 'Not in voting phase'}, status=status.HTTP_400_BAD_REQUEST)
         
-        username = request.data.get('username')
-        if not username:
-            return Response({'error': 'Username is required'}, status=status.HTTP_400_BAD_REQUEST)
-        
+        # Get voter from authenticated user
         try:
-            user = User.objects.get(username=username)
-            voter = Player.objects.get(user=user, room=room)
-        except (User.DoesNotExist, Player.DoesNotExist):
+            voter = Player.objects.get(user=request.user, room=room)
+        except Player.DoesNotExist:
             return Response({'error': 'Player not found'}, status=status.HTTP_404_NOT_FOUND)
         
         serializer = SubmitVoteSerializer(data=request.data)
@@ -1244,6 +1150,67 @@ def submit_vote(request, room_id):
     except Exception as e:
         # Ensure we always return JSON even in case of unexpected errors
         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def submit_answer(request, room_id):
+    """Submit answer for current round (authenticated user)"""
+    room = get_object_or_404(GameRoom, id=room_id)
+    game_round = get_object_or_404(GameRound, room=room, round_number=room.current_round) 
+       
+    if game_round.status != 'answering':
+        return Response({'error': 'Not in answering phase'}, status=status.HTTP_400_BAD_REQUEST)
+    
+    # Get player from authenticated user
+    try:
+        player = Player.objects.get(user=request.user, room=room)
+    except Player.DoesNotExist:
+        return Response({'error': 'Player not found'}, status=status.HTTP_404_NOT_FOUND)
+    
+    serializer = SubmitAnswerSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    # Create or update answer
+    answer, _ = PlayerAnswer.objects.update_or_create(
+        round=game_round,
+        player=player,
+        defaults={'answer': serializer.validated_data['answer']}
+    )
+    
+    # Mark player as having submitted answer
+    player.has_submitted_answer = True
+    player.save()
+    
+    # Create game event
+    GameEvent.objects.create(
+        room=room,
+        event_type='answer_submitted',
+        player=player,
+        data={'answer': answer.answer}
+    )
+    
+    # Check if all players have answered
+    total_players = room.players.filter(is_connected=True).count()
+    answered_players = game_round.answers.count()
+    
+    if answered_players >= total_players:
+        # Move to discussion phase
+        game_round.status = 'discussion'
+        game_round.discussion_started_at = timezone.now()
+        game_round.save()
+        
+        GameEvent.objects.create(
+            room=room,
+            event_type='discussion_started',
+            data={
+                'total_answers': answered_players,
+                'question_text': game_round.question.text,
+                'decoy_question_text': game_round.decoy_question.text
+            }
+        )
+    
+    return Response({'success': True, 'answer_id': answer.id})
 
 
 def end_round(game_round):

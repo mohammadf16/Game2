@@ -30,4 +30,8 @@ urlpatterns = [
     # Future game endpoints (placeholders)
     path('api/rooms/<uuid:room_id>/toggle-ready/', views.toggle_ready, name='toggle_ready'),
     path('api/rooms/<uuid:room_id>/start/', views.start_game, name='start_game'),
+    path('api/rooms/<uuid:room_id>/next-round/', views.continue_to_next_round, name='continue_to_next_round'),
+    path('api/rooms/<uuid:room_id>/round/', views.get_current_round, name='get_current_round'),
+    path('api/rooms/<uuid:room_id>/round/<int:round_number>/submit-answer/', views.submit_answer, name='submit_answer'),
+    path('api/rooms/<uuid:room_id>/round/<int:round_number>/vote/', views.submit_vote, name='submit_vote'),
 ]

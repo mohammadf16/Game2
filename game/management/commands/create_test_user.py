@@ -15,10 +15,10 @@ class Command(BaseCommand):
         
         # Create test user
         user = User.objects.create_user(
-            username='testuser',
-            email='test@example.com',
+            username='testuser1',
+            email='test1@example.com',
             password='testpass123',
-            first_name='Test',
+            first_name='Test1',
             last_name='User'
         )
         
@@ -33,8 +33,8 @@ class Command(BaseCommand):
         self.stdout.write(
             self.style.SUCCESS(
                 f'Successfully created test user:\n'
-                f'Username: testuser\n'
+                f'Username: testuser1\n'
                 f'Password: testpass123\n'
-                f'Email: test@example.com'
+                f'Email: test1@example.com'
             )
         )

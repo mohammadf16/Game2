@@ -9,11 +9,13 @@ from .models import (
     UserProfile, GameHistory, Achievement, UserAchievement
 )
 
-
 class UserSerializer(serializers.ModelSerializer):
+    profile_avatar = serializers.CharField(source='profile.avatar', read_only=True, default='detective_1')
+    
     class Meta:
         model = User
-        fields = ['id', 'username', 'first_name', 'last_name', 'email', 'date_joined']
+        fields = ['id', 'username', 'first_name', 'last_name', 'email', 'date_joined', 'profile_avatar']
+
 
 
 class UserProfileSerializer(serializers.ModelSerializer):

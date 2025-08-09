@@ -123,10 +123,32 @@ class GameRoom(models.Model):
     def total_player_count(self):
         return self.players.count()
     
+
     def can_start(self):
-        return (self.player_count >= self.min_players and 
-                self.status == 'waiting' and 
-                self.player_count <= self.max_players)
+        """Check if the game can be started"""
+        if self.status != 'waiting':
+            return False
+        
+        connected_players = self.players.filter(is_connected=True)
+        
+        # Check minimum player count
+        if connected_players.count() < self.min_players:
+            return False
+        
+        # Check maximum player count
+        if connected_players.count() > self.max_players:
+            return False
+        
+        # Check if all connected players are ready
+        ready_players = connected_players.filter(is_ready=True)
+        if ready_players.count() != connected_players.count():
+            return False
+        
+        # Must have at least one player
+        if connected_players.count() == 0:
+            return False
+        
+        return True
     
     def can_join(self):
         return (self.status in ['waiting'] and 
